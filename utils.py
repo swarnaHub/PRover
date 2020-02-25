@@ -828,6 +828,7 @@ def compute_sequence_metrics(task_name, sequence_preds, sequence_labels):
     all_correct = 0
     for i in range(len(sequence_labels)):
         gold_positive, pred_positive, correct_positive = 0, 0, 0
+        j = 0
         for j in range(len(sequence_labels[i])):
             if sequence_labels[i][j] == -100: # Ignore index
                 break
@@ -846,7 +847,7 @@ def compute_sequence_metrics(task_name, sequence_preds, sequence_labels):
         if precision + recall > 0:
             overall_f1 += 2*precision*recall/(precision + recall)
         # If they match exactly, then it's fully correct
-        if np.array_equal(sequence_labels[i], sequence_preds[i]):
+        if np.array_equal(sequence_labels[i][:j], sequence_preds[i][:j]):
             all_correct += 1
 
     overall_precision /= len(sequence_labels)
