@@ -51,15 +51,15 @@ class RobertaForRR(BertPreTrainedModel):
 
         sequence_logits = self.classifier_sequence(batch_output)
 
-        outputs = (logits,) + outputs[2:]
+        outputs = (logits, sequence_logits) + outputs[2:]
         if labels is not None:
             loss_fct = CrossEntropyLoss()
-            cr_loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            qa_loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             seq_loss = loss_fct(sequence_logits.view(-1, self.num_labels), proof_label.view(-1))
-            total_loss = cr_loss + seq_loss
-            outputs = (total_loss,) + outputs
+            total_loss = qa_loss + seq_loss
+            outputs = (total_loss, qa_loss, seq_loss) + outputs
 
-        return outputs  # (loss), logits, (hidden_states), (attentions)
+        return outputs  # (total_loss), qa_loss, seq_loss, logits, sequence_logits, (hidden_states), (attentions)
 
 
 

@@ -52,7 +52,7 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
 from pytorch_transformers import AdamW, WarmupLinearSchedule
 
 from model import RobertaForRR, RobertaForMultipleChoice
-from utils import (compute_metrics, convert_examples_to_features,
+from utils import (compute_metrics, compute_sequence_metrics, convert_examples_to_features,
                                 output_modes, processors,
                                 convert_multiple_choice_examples_to_features,
                                 convert_anli_examples_to_features,
@@ -157,11 +157,13 @@ def train(args, train_dataset, model, tokenizer):
                       'proof_label':    batch[4],
                       'labels':         batch[5]}
             outputs = model(**inputs)
-            loss = outputs[0]  # model outputs are always tuple in pytorch-transformers (see doc)
+            loss, qa_loss, seq_loss = outputs[:3]  # model outputs are always tuple in pytorch-transformers (see doc)
 
             if args.n_gpu > 1:
                 loss = loss.mean() # mean() to average on multi-gpu parallel training
                 logger.info("Loss = %f", loss)
+                logger.info("QA Loss = %f", qa_loss.mean())
+                logger.info("Sequence Loss = %f", seq_loss.mean())
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
 
@@ -249,7 +251,9 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
         eval_loss = 0.0
         nb_eval_steps = 0
         preds = None
+        sequence_preds = None
         out_label_ids = None
+        out_sequence_label_ids = None
         for batch in tqdm(eval_dataloader, desc="Evaluating", mininterval=10, ncols=100):
             model.eval()
             batch = tuple(t.to(args.device) for t in batch)
@@ -262,29 +266,37 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
                           'proof_label':    batch[4],
                           'labels':         batch[5]}
                 outputs = model(**inputs)
-                tmp_eval_loss, logits = outputs[:2]
+                tmp_eval_loss, tmp_qa_loss, tmp_seq_loss, logits, sequence_logits = outputs[:5]
 
                 eval_loss += tmp_eval_loss.mean().item()
             nb_eval_steps += 1
             if preds is None:
                 preds = logits.detach().cpu().numpy()
+                sequence_preds = sequence_logits.detach().cpu().numpy()
                 if not eval_split == "test":
                     out_label_ids = inputs['labels'].detach().cpu().numpy()
+                    out_sequence_label_ids = inputs['proof_label'].detach().cpu().numpy()
             else:
                 preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
+                sequence_preds = np.append(sequence_preds, sequence_logits.detach().cpu().numpy(), axis=0)
                 if not eval_split == "test":
                     out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
+                    out_sequence_label_ids = np.append(out_sequence_label_ids, inputs['proof_label'].detach().cpu().numpy(), axis=0)
 
         eval_loss = eval_loss / nb_eval_steps
         if args.output_mode == "classification" or args.output_mode == "multiple_choice":
             preds = np.argmax(preds, axis=1)
+            sequence_preds = np.argmax(sequence_preds, axis=2)
         elif args.output_mode == "regression":
             preds = np.squeeze(preds)
 
         if not eval_split == "test":
             result = compute_metrics(eval_task, preds, out_label_ids)
+            result_sequence = compute_sequence_metrics(eval_task, sequence_preds, out_sequence_label_ids)
             result_split = {}
             for k, v in result.items():
+                result_split[k + "_{}".format(eval_split)] = v
+            for k, v in result_sequence.items():
                 result_split[k + "_{}".format(eval_split)] = v
             results.update(result_split)
 

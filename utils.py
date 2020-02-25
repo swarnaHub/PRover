@@ -34,6 +34,7 @@ from scipy.stats import pearsonr, spearmanr
 from sklearn.metrics import matthews_corrcoef, f1_score
 import json
 from nltk.tokenize import sent_tokenize
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -559,7 +560,6 @@ def convert_examples_to_features_RR(examples,
                        proof_label=proof_label,
                        label_id=label_id))
 
-    print(max_size)
     return features
 
 
@@ -821,6 +821,40 @@ def compute_metrics(task_name, preds, labels):
         return {"acc": simple_accuracy(preds, labels)}
     else:
         raise KeyError(task_name)
+
+def compute_sequence_metrics(task_name, sequence_preds, sequence_labels):
+    assert len(sequence_preds) == len(sequence_labels)
+    overall_precision, overall_recall, overall_f1 = 0.0, 0.0, 0.0
+    all_correct = 0
+    for i in range(len(sequence_labels)):
+        gold_positive, pred_positive, correct_positive = 0, 0, 0
+        for j in range(len(sequence_labels[i])):
+            if sequence_labels[i][j] == -100: # Ignore index
+                break
+            if sequence_labels[i][j] == sequence_preds[i][j] and sequence_labels[i][j] == 1:
+                correct_positive += 1
+            if sequence_labels[i][j] == 1:
+                gold_positive += 1
+            if sequence_preds[i][j] == 1:
+                pred_positive += 1
+
+        precision = correct_positive/pred_positive
+        recall = correct_positive/gold_positive
+
+        overall_precision += precision
+        overall_recall += recall
+        if precision + recall > 0:
+            overall_f1 += 2*precision*recall/(precision + recall)
+        # If they match exactly, then it's fully correct
+        if np.array_equal(sequence_labels[i], sequence_preds[i]):
+            all_correct += 1
+
+    overall_precision /= len(sequence_labels)
+    overall_recall /= len(sequence_labels)
+    overall_f1 /= len(sequence_labels)
+    correct_accuracy = all_correct/len(sequence_labels)
+    return {"seq_prec": overall_precision, "seq_recall": overall_recall, "seq_f1": overall_f1, "seq_acc": correct_accuracy}
+
 
 processors = {
     "winogrande": WinograndeProcessor,
