@@ -838,8 +838,8 @@ def compute_sequence_metrics(task_name, sequence_preds, sequence_labels):
             if sequence_preds[i][j] == 1:
                 pred_positive += 1
 
-        precision = correct_positive/pred_positive
-        recall = correct_positive/gold_positive
+        precision = correct_positive/pred_positive if pred_positive > 0 else 1.0
+        recall = correct_positive/gold_positive if gold_positive > 0 else 1.0
 
         overall_precision += precision
         overall_recall += recall

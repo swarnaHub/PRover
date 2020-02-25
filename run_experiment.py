@@ -161,9 +161,9 @@ def train(args, train_dataset, model, tokenizer):
 
             if args.n_gpu > 1:
                 loss = loss.mean() # mean() to average on multi-gpu parallel training
-                logger.info("Loss = %f", loss)
-                logger.info("QA Loss = %f", qa_loss.mean())
-                logger.info("Sequence Loss = %f", seq_loss.mean())
+                #logger.info("Loss = %f", loss)
+                #logger.info("QA Loss = %f", qa_loss.mean())
+                #logger.info("Sequence Loss = %f", seq_loss.mean())
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
 
