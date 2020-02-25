@@ -2,6 +2,7 @@ from pytorch_transformers import BertPreTrainedModel, RobertaConfig, \
     ROBERTA_PRETRAINED_MODEL_ARCHIVE_MAP, RobertaModel
 from pytorch_transformers.modeling_roberta import RobertaClassificationHead
 from torch.nn import CrossEntropyLoss
+import torch
 
 class RobertaForRR(BertPreTrainedModel):
     config_class = RobertaConfig
@@ -14,21 +15,49 @@ class RobertaForRR(BertPreTrainedModel):
         self.num_labels = config.num_labels
         self.roberta = RobertaModel(config)
         self.classifier = RobertaClassificationHead(config)
+        self.classifier_sequence = torch.nn.Linear(config.hidden_size, config.num_labels)
 
         self.apply(self.init_weights)
 
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None,
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, proof_offset=None, proof_label=None, labels=None,
                 position_ids=None, head_mask=None):
         outputs = self.roberta(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
         sequence_output = outputs[0]
         logits = self.classifier(sequence_output)
 
+        max_seq_length = proof_label.shape[1]
+        batch_size = proof_label.shape[0]
+        embedding_dim = sequence_output.shape[2]
+
+        batch_output = torch.zeros((batch_size, max_seq_length, embedding_dim)).to("cuda")
+        for batch_index in range(sequence_output.shape[0]):
+            prev_index = 0
+            sample_output = None
+            count = 0
+            for offset in proof_offset[batch_index]:
+                if offset == 0:
+                    break
+                else:
+                    sentence_output = torch.mean(sequence_output[batch_index, prev_index:(offset+1), :], dim=0).unsqueeze(0)
+                    prev_index = offset+1
+                    count += 1
+                    if sample_output is None:
+                        sample_output = sentence_output
+                    else:
+                        sample_output = torch.cat((sample_output, sentence_output), dim=0)
+            sample_output = torch.cat((sample_output, torch.zeros((max_seq_length-count, embedding_dim)).to("cuda")), dim=0)
+            batch_output[batch_index, :, :] = sample_output
+
+        sequence_logits = self.classifier_sequence(batch_output)
+
         outputs = (logits,) + outputs[2:]
         if labels is not None:
             loss_fct = CrossEntropyLoss()
-            loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-            outputs = (loss,) + outputs
+            cr_loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            seq_loss = loss_fct(sequence_logits.view(-1, self.num_labels), proof_label.view(-1))
+            total_loss = cr_loss + seq_loss
+            outputs = (total_loss,) + outputs
 
         return outputs  # (loss), logits, (hidden_states), (attentions)
 

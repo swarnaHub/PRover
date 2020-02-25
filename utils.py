@@ -526,11 +526,16 @@ def convert_examples_to_features_RR(examples,
             input_mask = input_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
             segment_ids = segment_ids + ([pad_token_segment_id] * padding_length)
 
+        proof_offset = proof_offset + [0] * (max_seq_length - len(proof_offset))
         proof_label = example.proof_label
+        proof_label = proof_label + [-100] * (max_seq_length - len(proof_label))
+
 
         assert len(input_ids) == max_seq_length
         assert len(input_mask) == max_seq_length
         assert len(segment_ids) == max_seq_length
+        assert len(proof_offset) == max_seq_length
+        assert len(proof_label) == max_seq_length
 
         label_id = label_map[example.label]
 

@@ -153,7 +153,9 @@ def train(args, train_dataset, model, tokenizer):
             inputs = {'input_ids':      batch[0],
                       'attention_mask': batch[1],
                       'token_type_ids': batch[2] if args.model_type in ['bert', 'xlnet', 'bert_mc'] else None,  # XLM don't use segment_ids
-                      'labels':         batch[3]}
+                      'proof_offset':   batch[3],
+                      'proof_label':    batch[4],
+                      'labels':         batch[5]}
             outputs = model(**inputs)
             loss = outputs[0]  # model outputs are always tuple in pytorch-transformers (see doc)
 
@@ -256,7 +258,9 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
                 inputs = {'input_ids':      batch[0],
                           'attention_mask': batch[1],
                           'token_type_ids': batch[2] if args.model_type in ['bert', 'xlnet', 'bert_mc'] else None,  # XLM don't use segment_ids
-                          'labels':         batch[3]}
+                          'proof_offset':   batch[3],
+                          'proof_label':    batch[4],
+                          'labels':         batch[5]}
                 outputs = model(**inputs)
                 tmp_eval_loss, logits = outputs[:2]
 
@@ -360,6 +364,12 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, eval_split="t
                                                     pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
                                                     pad_token_segment_id=4 if args.model_type in ['xlnet'] else 0)
 
+        if args.local_rank in [-1, 0]:
+            logger.info("Saving features into cached file %s", cached_features_file)
+            if args.data_cache_dir is not None:
+                pathlib.Path(args.data_cache_dir).mkdir(parents=True, exist_ok=True)
+            torch.save(features, cached_features_file)
+
     if output_mode == "multiple_choice":
         def _select_field(features, field):
             return [
@@ -379,18 +389,14 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, eval_split="t
         all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
         all_input_mask = torch.tensor([f.input_mask for f in features], dtype=torch.long)
         all_segment_ids = torch.tensor([f.segment_ids for f in features], dtype=torch.long)
+        all_proof_offset = torch.tensor([f.proof_offset for f in features], dtype=torch.long)
+        all_proof_label = torch.tensor([f.proof_label for f in features], dtype=torch.long)
         if output_mode == "classification":
             all_label_ids = torch.tensor([f.label_id for f in features], dtype=torch.long)
         elif output_mode == "regression":
             all_label_ids = torch.tensor([f.label_id for f in features], dtype=torch.float)
 
-        if args.local_rank in [-1, 0]:
-            logger.info("Saving features into cached file %s", cached_features_file)
-            if args.data_cache_dir is not None:
-                pathlib.Path(args.data_cache_dir).mkdir(parents=True, exist_ok=True)
-            torch.save(features, cached_features_file)
-
-    dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids)
+    dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_proof_offset, all_proof_label, all_label_ids)
     return dataset
 
 
