@@ -289,20 +289,27 @@ class RRProcessor(DataProcessor):
     def get_labels(self):
         return [True, False]
 
+    # A hacky code to parse the proof structure
+    # TODO: Improve this
     def _get_proof_label(self, proofs, sentence_scramble, nfact, nrule):
         proof = proofs.split("OR")[0]
         proof_label = []
+        count = 0
         for index in sentence_scramble:
             if index <= nfact:
                 component = "triple" + str(index)
             else:
                 component = "rule" + str(index-nfact)
 
-            if component in proof:
+            # Each component ends with a space or end bracket
+            if component+" " in proof or component+")" in proof:
                 proof_label.append(1)
+                count += 1
             else:
                 proof_label.append(0)
 
+        # The number of 1s in the proof label should not be greater than the number of rules and triples
+        assert (proof.count("rule") + proof.count("triple") >= count)
         return proof_label
 
     def _create_examples(self, records, meta_records):
@@ -848,6 +855,8 @@ def compute_sequence_metrics(task_name, sequence_preds, sequence_labels):
             overall_f1 += 2*precision*recall/(precision + recall)
         # If they match exactly, then it's fully correct
         if np.array_equal(sequence_labels[i][:j], sequence_preds[i][:j]):
+            print(sequence_labels[i][:j])
+            print(sequence_preds[i][:j])
             all_correct += 1
 
     overall_precision /= len(sequence_labels)
