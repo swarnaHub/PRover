@@ -58,6 +58,8 @@ from utils import (compute_metrics, compute_sequence_metrics, convert_examples_t
                                 convert_anli_examples_to_features,
                                 convert_examples_to_features_RR)
 
+from nltk.tokenize import sent_tokenize
+
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +213,7 @@ def train(args, train_dataset, model, tokenizer):
             train_iterator.close()
             break
 
-        evaluate(args, model, tokenizer, processor, prefix=global_step, eval_split="dev")
+        #evaluate(args, model, tokenizer, processor, prefix=global_step, eval_split="dev")
 
     if args.local_rank in [-1, 0]:
         tb_writer.close()
@@ -234,7 +236,7 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
         results.update(existing_results)
 
     for eval_task, eval_output_dir in zip(eval_task_names, eval_outputs_dirs):
-        eval_dataset = load_and_cache_examples(args, eval_task, tokenizer, evaluate=True, eval_split=eval_split)
+        eval_dataset, examples = load_and_cache_examples(args, eval_task, tokenizer, evaluate=True, eval_split=eval_split)
 
         if not os.path.exists(eval_output_dir) and args.local_rank in [-1, 0]:
             os.makedirs(eval_output_dir)
@@ -314,6 +316,32 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
             for pred in preds:
                 writer.write("{}\n".format(processor.get_labels()[pred]))
 
+        # prediction proofs
+        output_proof_pred_file = os.path.join(eval_output_dir, "prediction_proofs_{}.lst".format(eval_split))
+        with open(output_proof_pred_file, "w") as writer:
+            logger.info("***** Write predictions {} on {} *****".format(prefix, eval_split))
+            for (ex_index, example) in enumerate(examples):
+                writer.write(example.context + "\n")
+                writer.write(example.question + "\n")
+                gold_proof = out_sequence_label_ids[ex_index]
+                gold_proof = gold_proof[np.where(gold_proof != -100)[0]]
+                pred_proof = sequence_preds[ex_index][:len(gold_proof)]
+                writer.write("Correct"+"\n") if np.array_equal(gold_proof, pred_proof) else writer.write("Incorrect\n")
+                writer.write(str(gold_proof) + "\n")
+                writer.write(str(pred_proof) + "\n")
+                
+                facts_rules = sent_tokenize(example.context)
+                assert len(gold_proof) == len(facts_rules)
+                for index in range(len(gold_proof)):
+                    if gold_proof[index] == 1:
+                        writer.write(facts_rules[index].strip())
+
+                writer.write("\n")
+                for index in range(len(pred_proof)):
+                    if pred_proof[index] == 1:
+                        writer.write(facts_rules[index].strip())
+                writer.write("\n\n")
+
         if os.path.exists("/output/"):
             with open("/output/metrics.json", "w") as f:
                 f.write(json.dumps(results))
@@ -340,6 +368,10 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, eval_split="t
     if os.path.exists(cached_features_file):
         logger.info("Loading features from cached file %s", cached_features_file)
         features = torch.load(cached_features_file)
+        if eval_split == "dev":
+            examples = processor.get_dev_examples(args.data_dir)
+        else:
+            examples = None
     else:
         logger.info("Creating features from dataset file at %s", args.data_dir)
         label_list = processor.get_labels()
@@ -409,7 +441,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, eval_split="t
             all_label_ids = torch.tensor([f.label_id for f in features], dtype=torch.float)
 
     dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_proof_offset, all_proof_label, all_label_ids)
-    return dataset
+    return dataset, examples
 
 
 def main():
@@ -574,7 +606,7 @@ def main():
 
     # Training
     if args.do_train:
-        train_dataset = load_and_cache_examples(args, args.task_name, tokenizer, evaluate=False)
+        train_dataset, _ = load_and_cache_examples(args, args.task_name, tokenizer, evaluate=False)
         global_step, tr_loss = train(args, train_dataset, model, tokenizer)
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 

@@ -315,6 +315,7 @@ class RRProcessor(DataProcessor):
     def _create_examples(self, records, meta_records):
         examples = []
         for (i, (record, meta_record)) in enumerate(zip(records, meta_records)):
+            assert record["id"] == meta_record["id"]
             context = record["context"]
             sentence_scramble = record["meta"]["sentenceScramble"]
             for (j, question) in enumerate(record["questions"]):
