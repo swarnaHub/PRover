@@ -36,6 +36,8 @@ import json
 from nltk.tokenize import sent_tokenize
 import numpy as np
 
+from proof_utils import get_proof_graph, get_proof_graph_with_fail
+
 logger = logging.getLogger(__name__)
 
 
@@ -59,25 +61,21 @@ class InputExample(object):
         self.text_b = text_b
         self.label = label
 
-
-class MCInputExample(object):
-    def __init__(self, guid, options, label):
-        self.guid = guid
-        self.options = options
-        self.label = label
-
-class ANLIInputExample(object):
-    def __init__(self, story_id, options, label):
-        self.story_id = story_id
-        self.options = options
-        self.label = label
-
 class RRInputExample(object):
-    def __init__(self, id, context, question, proof_label, label):
+    def __init__(self, id, context, question, node_label, label):
         self.id = id
         self.context = context
         self.question = question
-        self.proof_label = proof_label
+        self.node_label = node_label
+        self.label = label
+
+class RRInputExampleWithEdge(object):
+    def __init__(self, id, context, question, node_label, edge_label, label):
+        self.id = id
+        self.context = context
+        self.question = question
+        self.node_label = node_label
+        self.edge_label = edge_label
         self.label = label
 
 
@@ -90,47 +88,25 @@ class InputFeatures(object):
         self.segment_ids = segment_ids
         self.label_id = label_id
 
-
-class MultipleChoiceFeatures(object):
-    def __init__(self,
-                 example_id,
-                 option_features,
-                 label=None):
-        self.example_id = example_id
-        self.option_features = self.choices_features = [
-            {
-                'input_ids': input_ids,
-                'input_mask': input_mask,
-                'segment_ids': segment_ids
-            }
-            for _, input_ids, input_mask, segment_ids in option_features
-        ]
-        self.label = int(label)
-
-class ANLIFeatures(object):
-    def __init__(self,
-                 example_id,
-                 option_features,
-                 label=None):
-        self.example_id = example_id
-        self.option_features = self.choices_features = [
-            {
-                'input_ids': input_ids,
-                'input_mask': input_mask,
-                'segment_ids': segment_ids
-            }
-            for _, input_ids, input_mask, segment_ids in option_features
-        ]
-        self.label = int(label)
-
 class RRFeatures(object):
-    def __init__(self, id, input_ids, input_mask, segment_ids, proof_offset, proof_label, label_id):
+    def __init__(self, id, input_ids, input_mask, segment_ids, proof_offset, node_label, label_id):
         self.id = id
         self.input_ids = input_ids
         self.input_mask = input_mask
         self.segment_ids = segment_ids
         self.proof_offset = proof_offset
-        self.proof_label = proof_label
+        self.node_label = node_label
+        self.label_id = label_id
+
+class RRFeaturesWithEdge(object):
+    def __init__(self, id, input_ids, input_mask, segment_ids, proof_offset, node_label, edge_label, label_id):
+        self.id = id
+        self.input_ids = input_ids
+        self.input_mask = input_mask
+        self.segment_ids = segment_ids
+        self.proof_offset = proof_offset
+        self.node_label = node_label
+        self.edge_label = edge_label
         self.label_id = label_id
 
 
@@ -174,102 +150,6 @@ class DataProcessor(object):
                 records.append(json.loads(line))
             return records
 
-class ANLIProcessor(DataProcessor):
-
-    def get_train_examples(self, data_dir):
-        return self._create_examples(
-            self._read_jsonl(os.path.join(data_dir, "train_new.jsonl")))
-
-    def get_dev_examples(self, data_dir):
-        return self._create_examples(
-            self._read_jsonl(os.path.join(data_dir, "dev_new.jsonl")))
-
-    def get_labels(self):
-        return ["1", "2"]
-
-    def _create_examples(self, records):
-        examples = []
-        for (i, record) in enumerate(records):
-            story_id = record['story_id']
-
-            anli_example = ANLIInputExample(
-                story_id=story_id,
-                options=[
-                    {
-                        'obs1': record["obs1"],
-                        'obs2': record["obs2"],
-                        'hyp': record["hyp1"]
-                    },
-                    {
-                        'obs1': record["obs1"],
-                        'obs2': record["obs2"],
-                        'hyp': record["hyp2"]
-                    }
-                ],
-                label=record["answer"]
-            )
-            examples.append(anli_example)
-
-        return examples
-
-class WinograndeProcessor(DataProcessor):
-
-    def get_train_examples(self, data_dir):
-        return self._create_examples(
-            self._read_jsonl(os.path.join(data_dir, "train_xl.jsonl")))
-
-    def get_dev_examples(self, data_dir):
-        return self._create_examples(
-            self._read_jsonl(os.path.join(data_dir, "dev.jsonl")))
-
-    def get_test_examples(self, data_dir):
-        return self._create_examples(
-            self._read_jsonl(os.path.join(data_dir, "test.jsonl")))
-
-    def get_labels(self):
-        return ["1", "2"]
-
-    def _create_examples(self, records):
-        examples = []
-        for (i, record) in enumerate(records):
-            guid = record['qID']
-            sentence = record['sentence']
-
-            name1 = record['option1']
-            name2 = record['option2']
-            if not 'answer' in record:
-                # This is a dummy label for test prediction.
-                # test.jsonl doesn't include the `answer`.
-                label = "1"
-            else:
-                label = record['answer']
-
-            conj = "_"
-            idx = sentence.index(conj)
-            context = sentence[:idx]
-            option_str = "_ " + sentence[idx + len(conj):].strip()
-
-            option1 = option_str.replace("_", name1)
-            option2 = option_str.replace("_", name2)
-
-            mc_example = MCInputExample(
-                guid=guid,
-                options=[
-                    {
-                        'segment1': context,
-                        'segment2': option1
-                    },
-                    {
-                        'segment1': context,
-                        'segment2': option2
-                    }
-                ],
-                label=label
-            )
-            examples.append(mc_example)
-
-        return examples
-
 class RRProcessor(DataProcessor):
     def get_train_examples(self, data_dir):
         return self._create_examples(
@@ -291,9 +171,9 @@ class RRProcessor(DataProcessor):
 
     # A hacky code to parse the proof structure
     # TODO: Improve this
-    def _get_proof_label(self, proofs, sentence_scramble, nfact, nrule):
+    def _get_node_label(self, proofs, sentence_scramble, nfact, nrule):
         proof = proofs.split("OR")[0]
-        proof_label = []
+        node_label = []
         count = 0
         for index in sentence_scramble:
             if index <= nfact:
@@ -303,14 +183,55 @@ class RRProcessor(DataProcessor):
 
             # Each component ends with a space or end bracket
             if component+" " in proof or component+")" in proof:
-                proof_label.append(1)
+                node_label.append(1)
                 count += 1
             else:
-                proof_label.append(0)
+                node_label.append(0)
 
         # The number of 1s in the proof label should not be greater than the number of rules and triples
         assert (proof.count("rule") + proof.count("triple") >= count)
-        return proof_label
+        return node_label
+
+    def _get_node_edge_label(self, proofs, sentence_scramble, nfact, nrule):
+        proof = proofs.split("OR")[0]
+        node_label = [0] * (nfact + nrule + 1)
+        edge_label = [0] * (nfact + nrule + 1) * (nfact + nrule + 1)
+        if "FAIL" in proof:
+            nodes, edges = get_proof_graph_with_fail(proof)
+        else:
+            nodes, edges = get_proof_graph(proof)
+        print(proof)
+        print(nodes)
+        print(edges)
+
+        component_index_map = {}
+        for (i, index) in enumerate(sentence_scramble):
+            if index <= nfact:
+                component = "triple" + str(index)
+            else:
+                component = "rule" + str(index-nfact)
+            component_index_map[component] = i
+
+        for node in nodes:
+            if node != "NAF":
+                index = component_index_map[node]
+            else:
+                index = nfact+nrule
+            node_label[index] = 1
+
+        for edge in edges:
+            if edge[0] != "NAF":
+                start_index = component_index_map[edge[0]]
+            else:
+                start_index = nfact+nrule
+            if edge[1] != "NAF":
+                end_index = component_index_map[edge[1]]
+            else:
+                end_index = nfact+nrule
+
+            edge_label[start_index*(nfact+nrule+1) + end_index] = 1
+
+        return node_label, edge_label
 
     def _create_examples(self, records, meta_records):
         examples = []
@@ -332,14 +253,11 @@ class RRProcessor(DataProcessor):
                 proofs = meta_data["proofs"]
                 nfact = meta_record["NFact"]
                 nrule = meta_record["NRule"]
-                proof_label = self._get_proof_label(proofs, sentence_scramble, nfact, nrule)
+                node_label, edge_label = self._get_node_edge_label(proofs, sentence_scramble, nfact, nrule)
 
-                examples.append(RRInputExample(id, context, question, proof_label, label))
+                examples.append(RRInputExampleWithEdge(id, context, question, node_label, edge_label, label))
 
         return examples
-
-
-
 
 def convert_examples_to_features(examples,
                                  label_list,
@@ -470,6 +388,7 @@ def convert_examples_to_features(examples,
 def convert_examples_to_features_RR(examples,
                                  label_list,
                                  max_seq_length,
+                                 max_edge_length,
                                  tokenizer,
                                  output_mode,
                                  cls_token_at_end=False,
@@ -539,15 +458,14 @@ def convert_examples_to_features_RR(examples,
             segment_ids = segment_ids + ([pad_token_segment_id] * padding_length)
 
         proof_offset = proof_offset + [0] * (max_seq_length - len(proof_offset))
-        proof_label = example.proof_label
-        proof_label = proof_label + [-100] * (max_seq_length - len(proof_label))
-
+        node_label = example.node_label
+        node_label = node_label + [-100] * (max_seq_length - len(node_label))
 
         assert len(input_ids) == max_seq_length
         assert len(input_mask) == max_seq_length
         assert len(segment_ids) == max_seq_length
         assert len(proof_offset) == max_seq_length
-        assert len(proof_label) == max_seq_length
+        assert len(node_label) == max_seq_length
 
         label_id = label_map[example.label]
 
@@ -559,7 +477,7 @@ def convert_examples_to_features_RR(examples,
             logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
             logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
             logger.info("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
-            logger.info("proof_label: %s" % " ".join([str(x) for x in proof_label]))
+            logger.info("node_label: %s" % " ".join([str(x) for x in node_label]))
             logger.info("label: %s (id = %d)" % (example.label, label_id))
 
         features.append(
@@ -568,201 +486,121 @@ def convert_examples_to_features_RR(examples,
                        input_mask=input_mask,
                        segment_ids=segment_ids,
                        proof_offset=proof_offset,
-                       proof_label=proof_label,
+                       node_label=node_label,
                        label_id=label_id))
 
     return features
 
-
-def convert_multiple_choice_examples_to_features(examples, label_list, max_seq_length,
-                                                 tokenizer, output_mode,
-                                                 cls_token_at_end=False, pad_on_left=False,
-                                                 cls_token='[CLS]', sep_token='[SEP]', sep_token_extra=False, pad_token=0,
-                                                 sequence_a_segment_id=0, sequence_b_segment_id=1,
-                                                 cls_token_segment_id=1, pad_token_segment_id=0,
-                                                 mask_padding_with_zero=True):
-    """ Loads a data file into a list of `InputBatch`s
-        `cls_token_at_end` define the location of the CLS token:
-            - False (Default, BERT/XLM pattern): [CLS] + A + [SEP] + B + [SEP]
-            - True (XLNet/GPT pattern): A + [SEP] + B + [SEP] + [CLS]
-        `cls_token_segment_id` define the segment id associated to the CLS token (0 for BERT, 2 for XLNet)
-    """
+def convert_examples_to_features_RR_with_edges(examples,
+                                 label_list,
+                                 max_seq_length,
+                                 max_edge_length,
+                                 tokenizer,
+                                 output_mode,
+                                 cls_token_at_end=False,
+                                 pad_on_left=False,
+                                 cls_token='[CLS]',
+                                 sep_token='[SEP]',
+                                 sep_token_extra=False,
+                                 pad_token=0,
+                                 sequence_a_segment_id=0,
+                                 sequence_b_segment_id=1,
+                                 cls_token_segment_id=1,
+                                 pad_token_segment_id=0,
+                                 mask_padding_with_zero=True):
 
     label_map = {label : i for i, label in enumerate(label_list)}
 
     features = []
+    max_size = 0
     for (ex_index, example) in enumerate(examples):
         if ex_index % 10000 == 0:
             logger.info("Writing example %d of %d" % (ex_index, len(examples)))
-        option_features = []
-        for option in example.options:
 
-            context_tokens = tokenizer.tokenize(option['segment1'])
+        sentences = sent_tokenize(example.context)
+        context_tokens = []
+        proof_offset = []
+        for sentence in sentences:
+            context_tokens.extend(tokenizer.tokenize(sentence))
+            proof_offset.append(len(context_tokens))
+        max_size = max(max_size, len(context_tokens))
 
-            option_tokens = tokenizer.tokenize(option['segment2'])
-            special_tokens_count = 4 if sep_token_extra else 3
-            _truncate_seq_pair(context_tokens, option_tokens, max_seq_length - special_tokens_count)
+        question_tokens = tokenizer.tokenize(example.question)
 
-            tokens = context_tokens + [sep_token]
+        special_tokens_count = 3 if sep_token_extra else 2
+        _truncate_seq_pair(context_tokens, question_tokens, max_seq_length - special_tokens_count - 1)
 
-            if sep_token_extra:
-                # roberta uses an extra separator b/w pairs of sentences
-                tokens += [sep_token]
+        tokens = context_tokens + [sep_token]
+        if sep_token_extra:
+            # roberta uses an extra separator b/w pairs of sentences
+            tokens += [sep_token]
+        segment_ids = [sequence_a_segment_id] * len(tokens)
 
-            segment_ids = [sequence_a_segment_id] * len(tokens)
-            tokens += option_tokens + [sep_token]
+        tokens += question_tokens + [sep_token]
+        segment_ids += [sequence_b_segment_id] * (len(question_tokens) + 1)
 
-            segment_ids += [sequence_b_segment_id] * (len(option_tokens) + 1)
+        if cls_token_at_end:
+            tokens = tokens + [cls_token]
+            segment_ids = segment_ids + [cls_token_segment_id]
+        else:
+            tokens = [cls_token] + tokens
+            segment_ids = [cls_token_segment_id] + segment_ids
 
-            if cls_token_at_end:
-                tokens = tokens + [cls_token]
-                segment_ids = segment_ids + [cls_token_segment_id]
-            else:
-                tokens = [cls_token] + tokens
-                segment_ids = [cls_token_segment_id] + segment_ids
+        input_ids = tokenizer.convert_tokens_to_ids(tokens)
 
-            input_ids = tokenizer.convert_tokens_to_ids(tokens)
+        # The mask has 1 for real tokens and 0 for padding tokens. Only real
+        # tokens are attended to.
+        input_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
 
-            # The mask has 1 for real tokens and 0 for padding tokens. Only real
-            # tokens are attended to.
-            input_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
+        # Zero-pad up to the sequence length.
+        padding_length = max_seq_length - len(input_ids)
+        if pad_on_left:
+            input_ids = ([pad_token] * padding_length) + input_ids
+            input_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + input_mask
+            segment_ids = ([pad_token_segment_id] * padding_length) + segment_ids
+        else:
+            input_ids = input_ids + ([pad_token] * padding_length)
+            input_mask = input_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
+            segment_ids = segment_ids + ([pad_token_segment_id] * padding_length)
 
-            # Zero-pad up to the sequence length.
-            padding_length = max_seq_length - len(input_ids)
-            if pad_on_left:
-                input_ids = ([pad_token] * padding_length) + input_ids
-                input_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + input_mask
-                segment_ids = ([pad_token_segment_id] * padding_length) + segment_ids
-            else:
-                input_ids = input_ids + ([pad_token] * padding_length)
-                input_mask = input_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
-                segment_ids = segment_ids + ([pad_token_segment_id] * padding_length)
+        proof_offset = proof_offset + [0] * (max_seq_length - len(proof_offset))
+        node_label = example.node_label
+        node_label = node_label + [-100] * (max_seq_length - len(node_label))
 
-            assert len(input_ids) == max_seq_length
-            assert len(input_mask) == max_seq_length
-            assert len(segment_ids) == max_seq_length
+        edge_label = example.edge_label
+        edge_label = edge_label + [-100] * (max_edge_length - len(edge_label))
 
-            if output_mode != "multiple_choice":
-                raise KeyError(output_mode)
-
-            option_features.append((tokens, input_ids, input_mask, segment_ids))
+        assert len(input_ids) == max_seq_length
+        assert len(input_mask) == max_seq_length
+        assert len(segment_ids) == max_seq_length
+        assert len(proof_offset) == max_seq_length
+        assert len(node_label) == max_seq_length
+        assert len(edge_label) == max_edge_length
 
         label_id = label_map[example.label]
 
         if ex_index < 5:
             logger.info("*** Example ***")
-            logger.info(f"example_id: {example.guid}")
-            for choice_idx, (tokens, input_ids, input_mask, segment_ids) in enumerate(
-                    option_features):
-                logger.info(f"choice: {choice_idx}")
-                logger.info(f"tokens: {' '.join(tokens)}")
-                logger.info(f"input_ids: {' '.join(map(str, input_ids))}")
-                logger.info(f"input_mask: {' '.join(map(str, input_mask))}")
-                logger.info(f"segment_ids: {' '.join(map(str, segment_ids))}")
-            logger.info(f"label: {label_id}")
+            logger.info("id: %s" % (example.id))
+            logger.info("tokens: %s" % " ".join(
+                [str(x) for x in tokens]))
+            logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
+            logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
+            logger.info("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
+            logger.info("node_label: %s" % " ".join([str(x) for x in node_label]))
+            logger.info("edge_label: %s" % " ".join([str(x) for x in edge_label]))
+            logger.info("label: %s (id = %d)" % (example.label, label_id))
 
         features.append(
-            MultipleChoiceFeatures(
-                example_id=example.guid,
-                option_features=option_features,
-                label=label_id
-            )
-        )
-    return features
+            RRFeaturesWithEdge(id=id,
+                       input_ids=input_ids,
+                       input_mask=input_mask,
+                       segment_ids=segment_ids,
+                       proof_offset=proof_offset,
+                       node_label=node_label,
+                       edge_label=edge_label,
+                       label_id=label_id))
 
-def convert_anli_examples_to_features(examples, label_list, max_seq_length,
-                                                 tokenizer, output_mode,
-                                                 cls_token_at_end=False, pad_on_left=False,
-                                                 cls_token='[CLS]', sep_token='[SEP]', sep_token_extra=False, pad_token=0,
-                                                 sequence_a_segment_id=0, sequence_b_segment_id=1,
-                                                 cls_token_segment_id=1, pad_token_segment_id=0,
-                                                 mask_padding_with_zero=True):
-    """ Loads a data file into a list of `InputBatch`s
-        `cls_token_at_end` define the location of the CLS token:
-            - False (Default, BERT/XLM pattern): [CLS] + A + [SEP] + B + [SEP]
-            - True (XLNet/GPT pattern): A + [SEP] + B + [SEP] + [CLS]
-        `cls_token_segment_id` define the segment id associated to the CLS token (0 for BERT, 2 for XLNet)
-    """
-
-    label_map = {label : i for i, label in enumerate(label_list)}
-
-    features = []
-    for (ex_index, example) in enumerate(examples):
-        if ex_index % 10000 == 0:
-            logger.info("Writing example %d of %d" % (ex_index, len(examples)))
-        option_features = []
-        for option in example.options:
-
-            obs1_tokens = tokenizer.tokenize(option['obs1'])
-            obs2_tokens = tokenizer.tokenize(option['obs2'])
-
-            hyp_tokens = tokenizer.tokenize(option['hyp'])
-            special_tokens_count = 6 if sep_token_extra else 4
-            _truncate_seq_triple(obs1_tokens, obs2_tokens, hyp_tokens, max_seq_length - special_tokens_count)
-
-            tokens = obs1_tokens + hyp_tokens + [sep_token]
-            if sep_token_extra:
-                # roberta uses an extra separator b/w pairs of sentences
-                tokens += [sep_token]
-            segment_ids = [sequence_a_segment_id] * len(tokens)
-
-            tokens += obs2_tokens + [sep_token]
-            segment_ids += [sequence_b_segment_id] * (len(obs2_tokens) + 1)
-
-            if cls_token_at_end:
-                tokens = tokens + [cls_token]
-                segment_ids = segment_ids + [cls_token_segment_id]
-            else:
-                tokens = [cls_token] + tokens
-                segment_ids = [cls_token_segment_id] + segment_ids
-
-            input_ids = tokenizer.convert_tokens_to_ids(tokens)
-
-            # The mask has 1 for real tokens and 0 for padding tokens. Only real
-            # tokens are attended to.
-            input_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
-
-            # Zero-pad up to the sequence length.
-            padding_length = max_seq_length - len(input_ids)
-            if pad_on_left:
-                input_ids = ([pad_token] * padding_length) + input_ids
-                input_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + input_mask
-                segment_ids = ([pad_token_segment_id] * padding_length) + segment_ids
-            else:
-                input_ids = input_ids + ([pad_token] * padding_length)
-                input_mask = input_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
-                segment_ids = segment_ids + ([pad_token_segment_id] * padding_length)
-
-            assert len(input_ids) == max_seq_length
-            assert len(input_mask) == max_seq_length
-            assert len(segment_ids) == max_seq_length
-
-            if output_mode != "multiple_choice":
-                raise KeyError(output_mode)
-
-            option_features.append((tokens, input_ids, input_mask, segment_ids))
-
-        label_id = label_map[example.label]
-
-        if ex_index < 5:
-            logger.info("*** Example ***")
-            logger.info(f"example_id: {example.story_id}")
-            for choice_idx, (tokens, input_ids, input_mask, segment_ids) in enumerate(
-                    option_features):
-                logger.info(f"choice: {choice_idx}")
-                logger.info(f"tokens: {' '.join(tokens)}")
-                logger.info(f"input_ids: {' '.join(map(str, input_ids))}")
-                logger.info(f"input_mask: {' '.join(map(str, input_mask))}")
-                logger.info(f"segment_ids: {' '.join(map(str, segment_ids))}")
-            logger.info(f"label: {label_id}")
-
-        features.append(
-            ANLIFeatures(
-                example_id=example.story_id,
-                option_features=option_features,
-                label=label_id
-            )
-        )
     return features
 
 
@@ -828,7 +666,7 @@ def pearson_and_spearman(preds, labels):
 
 def compute_metrics(task_name, preds, labels):
     assert len(preds) == len(labels)
-    if task_name == "winogrande" or task_name == "anli" or task_name == "rr":
+    if task_name == "rr":
         return {"acc": simple_accuracy(preds, labels)}
     else:
         raise KeyError(task_name)
@@ -859,8 +697,6 @@ def compute_sequence_metrics(task_name, sequence_preds, sequence_labels):
             overall_f1 += 2*precision*recall/(precision + recall)
         # If they match exactly, then it's fully correct
         if np.array_equal(sequence_labels[i][:j], sequence_preds[i][:j]):
-            print(sequence_labels[i][:j])
-            print(sequence_preds[i][:j])
             all_correct += 1
 
     overall_precision /= len(sequence_labels)
@@ -871,19 +707,13 @@ def compute_sequence_metrics(task_name, sequence_preds, sequence_labels):
 
 
 processors = {
-    "winogrande": WinograndeProcessor,
-    "anli": ANLIProcessor,
     "rr": RRProcessor
 }
 
 output_modes = {
-    "winogrande": "multiple_choice",
-    "anli": "multiple_choice",
     "rr": "classification"
 }
 
 GLUE_TASKS_NUM_LABELS = {
-    "winogrande": 2,
-    "anli": 2,
     "rr": 2
 }

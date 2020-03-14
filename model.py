@@ -1,16 +1,16 @@
 from pytorch_transformers import BertPreTrainedModel, RobertaConfig, \
     ROBERTA_PRETRAINED_MODEL_ARCHIVE_MAP, RobertaModel
 from pytorch_transformers.modeling_roberta import RobertaClassificationHead
-from torch.nn import CrossEntropyLoss
+from torch.nn import CrossEntropyLoss, BCEWithLogitsLoss
 import torch
 
-class RobertaForRR(BertPreTrainedModel):
+class RobertaForRRWithNodeLoss(BertPreTrainedModel):
     config_class = RobertaConfig
     pretrained_model_archive_map = ROBERTA_PRETRAINED_MODEL_ARCHIVE_MAP
     base_model_prefix = "roberta"
 
     def __init__(self, config):
-        super(RobertaForRR, self).__init__(config)
+        super(RobertaForRRWithNodeLoss, self).__init__(config)
 
         self.num_labels = config.num_labels
         self.roberta = RobertaModel(config)
@@ -19,22 +19,23 @@ class RobertaForRR(BertPreTrainedModel):
 
         self.apply(self.init_weights)
 
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, proof_offset=None, proof_label=None, labels=None,
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, proof_offset=None, node_label=None, labels=None,
                 position_ids=None, head_mask=None):
         outputs = self.roberta(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
         sequence_output = outputs[0]
         logits = self.classifier(sequence_output)
 
-        max_seq_length = proof_label.shape[1]
-        batch_size = proof_label.shape[0]
+        max_seq_length = node_label.shape[1]
+        batch_size = node_label.shape[0]
         embedding_dim = sequence_output.shape[2]
 
         batch_output = torch.zeros((batch_size, max_seq_length, embedding_dim)).to("cuda")
         for batch_index in range(sequence_output.shape[0]):
-            prev_index = 0
+            prev_index = 1
             sample_output = None
             count = 0
+            # TODO: Make it efficient
             for offset in proof_offset[batch_index]:
                 if offset == 0:
                     break
@@ -55,13 +56,72 @@ class RobertaForRR(BertPreTrainedModel):
         if labels is not None:
             loss_fct = CrossEntropyLoss()
             qa_loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-            seq_loss = loss_fct(sequence_logits.view(-1, self.num_labels), proof_label.view(-1))
+            seq_loss = loss_fct(sequence_logits.view(-1, self.num_labels), node_label.view(-1))
             total_loss = qa_loss + seq_loss
             outputs = (total_loss, qa_loss, seq_loss) + outputs
 
         return outputs  # (total_loss), qa_loss, seq_loss, logits, sequence_logits, (hidden_states), (attentions)
 
 
+class RobertaForRRWithEdgeLoss(BertPreTrainedModel):
+    config_class = RobertaConfig
+    pretrained_model_archive_map = ROBERTA_PRETRAINED_MODEL_ARCHIVE_MAP
+    base_model_prefix = "roberta"
+
+    def __init__(self, config):
+        super(RobertaForRRWithEdgeLoss, self).__init__(config)
+
+        self.num_labels = config.num_labels
+        self.roberta = RobertaModel(config)
+        self.classifier = RobertaClassificationHead(config)
+        self.classifier_edge = torch.nn.Linear(config.hidden_size, config.num_labels)
+
+        self.apply(self.init_weights)
+
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, proof_offset=None, edge_label=None, labels=None,
+                position_ids=None, head_mask=None):
+        outputs = self.roberta(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
+                            attention_mask=attention_mask, head_mask=head_mask)
+        sequence_output = outputs[0]
+        logits = self.classifier(sequence_output)
+
+        batch_size = input_ids.shape[0]
+        edge_label_size = edge_label.shape[1]
+
+        similarity_logits = torch.zeros((batch_size, edge_label_size))
+        for batch_index in range(sequence_output.shape[0]):
+            prev_index = 1
+            sample_output = None
+            count = 0
+            # TODO: Make it efficient
+            for offset in proof_offset[batch_index]:
+                if offset == 0:
+                    break
+                else:
+                    sentence_output = torch.mean(sequence_output[batch_index, prev_index:(offset+1), :], dim=0).unsqueeze(0)
+                    prev_index = offset+1
+                    count += 1
+                    if sample_output is None:
+                        sample_output = sentence_output
+                    else:
+                        sample_output = torch.cat((sample_output, sentence_output), dim=0)
+            
+            sample_similarity_logits = torch.mm(sample_output, torch.transpose(sample_output, 0, 1)).view(-1)
+            sample_similarity_logits = torch.cat((sample_similarity_logits, torch.zeros(edge_label_size-len(sample_similarity_logits))))
+            similarity_logits[batch_index, :] = sample_similarity_logits
+
+        outputs = (logits, similarity_logits) + outputs[2:]
+        if labels is not None:
+            loss_fct = CrossEntropyLoss()
+            qa_loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+
+            bce_loss_fct = BCEWithLogitsLoss()
+            edge_loss = bce_loss_fct(similarity_logits, edge_label.view(-1))
+
+            total_loss = qa_loss + edge_loss
+            outputs = (total_loss, qa_loss, edge_loss) + outputs
+
+        return outputs  # (total_loss), qa_loss, seq_loss, logits, sequence_logits, (hidden_states), (attentions)
 
 
 class RobertaForMultipleChoice(BertPreTrainedModel):

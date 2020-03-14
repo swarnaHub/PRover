@@ -51,17 +51,18 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
 
 from pytorch_transformers import AdamW, WarmupLinearSchedule
 
-from model import RobertaForRRWithNodeLoss, RobertaForMultipleChoice
+from model import RobertaForRRWithEdgeLoss, RobertaForMultipleChoice
 from utils import (compute_metrics, compute_sequence_metrics, convert_examples_to_features,
-                                output_modes, processors,
-                                convert_examples_to_features_RR)
+                   output_modes, processors,
+                   convert_examples_to_features_RR_with_edges)
 
 from nltk.tokenize import sent_tokenize
 
-
 logger = logging.getLogger(__name__)
 
-ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) for conf in (BertConfig, XLNetConfig, XLMConfig, RobertaConfig)), ())
+ALL_MODELS = sum(
+    (tuple(conf.pretrained_config_archive_map.keys()) for conf in (BertConfig, XLNetConfig, XLMConfig, RobertaConfig)),
+    ())
 
 MODEL_CLASSES = {
     'bert': (BertConfig, BertForSequenceClassification, BertTokenizer),
@@ -70,7 +71,7 @@ MODEL_CLASSES = {
     'xlm': (XLMConfig, XLMForSequenceClassification, XLMTokenizer),
     'roberta': (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
     'roberta_mc': (RobertaConfig, RobertaForMultipleChoice, RobertaTokenizer),
-    'roberta_rr': (RobertaConfig, RobertaForRRWithNodeLoss, RobertaTokenizer)
+    'roberta_rr': (RobertaConfig, RobertaForRRWithEdgeLoss, RobertaTokenizer)
 }
 
 
@@ -103,7 +104,8 @@ def train(args, train_dataset, model, tokenizer):
     # Prepare optimizer and schedule (linear warmup and decay)
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
-        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)], 'weight_decay': args.weight_decay},
+        {'params': [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)],
+         'weight_decay': args.weight_decay},
         {'params': [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
     ]
 
@@ -111,7 +113,7 @@ def train(args, train_dataset, model, tokenizer):
     if args.warmup_pct is None:
         scheduler = WarmupLinearSchedule(optimizer, warmup_steps=args.warmup_steps, t_total=t_total)
     else:
-        scheduler = WarmupLinearSchedule(optimizer, warmup_steps=math.floor(args.warmup_pct*t_total), t_total=t_total)
+        scheduler = WarmupLinearSchedule(optimizer, warmup_steps=math.floor(args.warmup_pct * t_total), t_total=t_total)
 
     if args.fp16:
         try:
@@ -136,7 +138,8 @@ def train(args, train_dataset, model, tokenizer):
     logger.info("  Num Epochs = %d", args.num_train_epochs)
     logger.info("  Instantaneous batch size per GPU = %d", args.per_gpu_train_batch_size)
     logger.info("  Total train batch size (w. parallel, distributed & accumulation) = %d",
-                args.train_batch_size * args.gradient_accumulation_steps * (torch.distributed.get_world_size() if args.local_rank != -1 else 1))
+                args.train_batch_size * args.gradient_accumulation_steps * (
+                    torch.distributed.get_world_size() if args.local_rank != -1 else 1))
     logger.info("  Gradient Accumulation steps = %d", args.gradient_accumulation_steps)
     logger.info("  Total optimization steps = %d", t_total)
 
@@ -146,24 +149,26 @@ def train(args, train_dataset, model, tokenizer):
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0])
     # set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
     for _ in train_iterator:
-        epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0], mininterval=10, ncols=100)
+        epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0],
+                              mininterval=10, ncols=100)
         for step, batch in enumerate(epoch_iterator):
             model.train()
             batch = tuple(t.to(args.device) for t in batch)
-            inputs = {'input_ids':      batch[0],
+            inputs = {'input_ids': batch[0],
                       'attention_mask': batch[1],
-                      'token_type_ids': batch[2] if args.model_type in ['bert', 'xlnet', 'bert_mc'] else None,  # XLM don't use segment_ids
-                      'proof_offset':   batch[3],
-                      'node_label':    batch[4],
-                      'labels':         batch[5]}
+                      'token_type_ids': batch[2] if args.model_type in ['bert', 'xlnet', 'bert_mc'] else None,
+                      # XLM don't use segment_ids
+                      'proof_offset': batch[3],
+                      'edge_label': batch[4],
+                      'labels': batch[5]}
             outputs = model(**inputs)
             loss, qa_loss, seq_loss = outputs[:3]  # model outputs are always tuple in pytorch-transformers (see doc)
 
             if args.n_gpu > 1:
-                loss = loss.mean() # mean() to average on multi-gpu parallel training
-                #logger.info("Loss = %f", loss)
-                #logger.info("QA Loss = %f", qa_loss.mean())
-                #logger.info("Sequence Loss = %f", seq_loss.mean())
+                loss = loss.mean()  # mean() to average on multi-gpu parallel training
+                # logger.info("Loss = %f", loss)
+                # logger.info("QA Loss = %f", qa_loss.mean())
+                # logger.info("Sequence Loss = %f", seq_loss.mean())
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
 
@@ -211,7 +216,7 @@ def train(args, train_dataset, model, tokenizer):
             train_iterator.close()
             break
 
-        #evaluate(args, model, tokenizer, processor, prefix=global_step, eval_split="dev")
+        # evaluate(args, model, tokenizer, processor, prefix=global_step, eval_split="dev")
 
     if args.local_rank in [-1, 0]:
         tb_writer.close()
@@ -220,7 +225,6 @@ def train(args, train_dataset, model, tokenizer):
 
 
 def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
-
     eval_task_names = (args.task_name,)
     eval_outputs_dirs = (args.output_dir,)
 
@@ -234,7 +238,8 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
         results.update(existing_results)
 
     for eval_task, eval_output_dir in zip(eval_task_names, eval_outputs_dirs):
-        eval_dataset, examples = load_and_cache_examples(args, eval_task, tokenizer, evaluate=True, eval_split=eval_split)
+        eval_dataset, examples = load_and_cache_examples(args, eval_task, tokenizer, evaluate=True,
+                                                         eval_split=eval_split)
 
         if not os.path.exists(eval_output_dir) and args.local_rank in [-1, 0]:
             os.makedirs(eval_output_dir)
@@ -259,12 +264,13 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
             batch = tuple(t.to(args.device) for t in batch)
 
             with torch.no_grad():
-                inputs = {'input_ids':      batch[0],
+                inputs = {'input_ids': batch[0],
                           'attention_mask': batch[1],
-                          'token_type_ids': batch[2] if args.model_type in ['bert', 'xlnet', 'bert_mc'] else None,  # XLM don't use segment_ids
-                          'proof_offset':   batch[3],
-                          'node_label':    batch[4],
-                          'labels':         batch[5]}
+                          'token_type_ids': batch[2] if args.model_type in ['bert', 'xlnet', 'bert_mc'] else None,
+                          # XLM don't use segment_ids
+                          'proof_offset': batch[3],
+                          'edge_label': batch[4],
+                          'labels': batch[5]}
                 outputs = model(**inputs)
                 tmp_eval_loss, tmp_qa_loss, tmp_seq_loss, logits, sequence_logits = outputs[:5]
 
@@ -275,13 +281,14 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
                 sequence_preds = sequence_logits.detach().cpu().numpy()
                 if not eval_split == "test":
                     out_label_ids = inputs['labels'].detach().cpu().numpy()
-                    out_sequence_label_ids = inputs['node_label'].detach().cpu().numpy()
+                    out_sequence_label_ids = inputs['edge_label'].detach().cpu().numpy()
             else:
                 preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
                 sequence_preds = np.append(sequence_preds, sequence_logits.detach().cpu().numpy(), axis=0)
                 if not eval_split == "test":
                     out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
-                    out_sequence_label_ids = np.append(out_sequence_label_ids, inputs['node_label'].detach().cpu().numpy(), axis=0)
+                    out_sequence_label_ids = np.append(out_sequence_label_ids,
+                                                       inputs['edge_label'].detach().cpu().numpy(), axis=0)
 
         eval_loss = eval_loss / nb_eval_steps
         if args.output_mode == "classification" or args.output_mode == "multiple_choice":
@@ -315,7 +322,7 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
                 writer.write("{}\n".format(processor.get_labels()[pred]))
 
         # prediction proofs
-        output_proof_pred_file = os.path.join(eval_output_dir, "prediction_proofs_{}.lst".format(eval_split))
+        output_proof_pred_file = os.path.join(eval_output_dir, "prediction_edges_{}.lst".format(eval_split))
         with open(output_proof_pred_file, "w") as writer:
             logger.info("***** Write predictions {} on {} *****".format(prefix, eval_split))
             for (ex_index, example) in enumerate(examples):
@@ -324,10 +331,11 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
                 gold_proof = out_sequence_label_ids[ex_index]
                 gold_proof = gold_proof[np.where(gold_proof != -100)[0]]
                 pred_proof = sequence_preds[ex_index][:len(gold_proof)]
-                writer.write("Correct"+"\n") if np.array_equal(gold_proof, pred_proof) else writer.write("Incorrect\n")
+                writer.write("Correct" + "\n") if np.array_equal(gold_proof, pred_proof) else writer.write(
+                    "Incorrect\n")
                 writer.write(str(gold_proof) + "\n")
                 writer.write(str(pred_proof) + "\n")
-                
+
                 facts_rules = sent_tokenize(example.context)
                 assert len(gold_proof) == len(facts_rules)
                 for index in range(len(gold_proof)):
@@ -383,15 +391,20 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, eval_split="t
         else:
             raise Exception("eval_split should be among train / dev / test")
 
-        features = convert_examples_to_features_RR(examples, label_list, args.max_seq_length, args.max_edge_length, tokenizer, output_mode,
-                                                cls_token_at_end=bool(args.model_type in ['xlnet']),            # xlnet has a cls token at the end
-                                                cls_token=tokenizer.cls_token,
-                                                sep_token=tokenizer.sep_token,
-                                                sep_token_extra=bool(args.model_type in ['roberta', "roberta_mc", "roberta_rr"]),
-                                                cls_token_segment_id=2 if args.model_type in ['xlnet'] else 0,
-                                                pad_on_left=bool(args.model_type in ['xlnet']),                 # pad on the left for xlnet
-                                                pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[0],
-                                                pad_token_segment_id=4 if args.model_type in ['xlnet'] else 0)
+        features = convert_examples_to_features_RR_with_edges(examples, label_list, args.max_seq_length, args.max_edge_length,
+                                                   tokenizer, output_mode,
+                                                   cls_token_at_end=bool(args.model_type in ['xlnet']),
+                                                   # xlnet has a cls token at the end
+                                                   cls_token=tokenizer.cls_token,
+                                                   sep_token=tokenizer.sep_token,
+                                                   sep_token_extra=bool(
+                                                       args.model_type in ['roberta', "roberta_mc", "roberta_rr"]),
+                                                   cls_token_segment_id=2 if args.model_type in ['xlnet'] else 0,
+                                                   pad_on_left=bool(args.model_type in ['xlnet']),
+                                                   # pad on the left for xlnet
+                                                   pad_token=tokenizer.convert_tokens_to_ids([tokenizer.pad_token])[
+                                                       0],
+                                                   pad_token_segment_id=4 if args.model_type in ['xlnet'] else 0)
 
         if args.local_rank in [-1, 0]:
             logger.info("Saving features into cached file %s", cached_features_file)
@@ -404,9 +417,11 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, eval_split="t
     all_segment_ids = torch.tensor([f.segment_ids for f in features], dtype=torch.long)
     all_proof_offset = torch.tensor([f.proof_offset for f in features], dtype=torch.long)
     all_node_label = torch.tensor([f.node_label for f in features], dtype=torch.long)
+    all_edge_label = torch.tensor([f.edge_label for f in features], dtype=torch.long)
     all_label_ids = torch.tensor([f.label_id for f in features], dtype=torch.long)
 
-    dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_proof_offset, all_node_label, all_label_ids)
+    dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_proof_offset, all_node_label, all_edge_label,
+                            all_label_ids)
     return dataset, examples
 
 
@@ -419,13 +434,15 @@ def main():
     parser.add_argument("--model_type", default=None, type=str, required=True,
                         help="Model type selected in the list: " + ", ".join(MODEL_CLASSES.keys()))
     parser.add_argument("--model_name_or_path", default=None, type=str, required=True,
-                        help="Path to pre-trained model or shortcut name selected in the list: " + ", ".join(ALL_MODELS))
+                        help="Path to pre-trained model or shortcut name selected in the list: " + ", ".join(
+                            ALL_MODELS))
     parser.add_argument("--task_name", default=None, type=str, required=True,
                         help="The name of the task to train selected in the list: " + ", ".join(processors.keys()))
     parser.add_argument("--output_dir", default=None, type=str, required=True,
                         help="The output directory where the model predictions and checkpoints will be written.")
 
-    parser.add_argument("--data_cache_dir", default=None, type=str, help="Cache dir if it needs to be diff from data_dir")
+    parser.add_argument("--data_cache_dir", default=None, type=str,
+                        help="Cache dir if it needs to be diff from data_dir")
 
     ## Other parameters
     parser.add_argument("--config_name", default="", type=str,
@@ -500,8 +517,11 @@ def main():
     parser.add_argument('--server_port', type=str, default='', help="For distant debugging.")
     args = parser.parse_args()
 
-    if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
-        raise ValueError("Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(args.output_dir))
+    if os.path.exists(args.output_dir) and os.listdir(
+            args.output_dir) and args.do_train and not args.overwrite_output_dir:
+        raise ValueError(
+            "Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(
+                args.output_dir))
 
     # Setup distant debugging if needed
     if args.server_ip and args.server_port:
@@ -523,9 +543,9 @@ def main():
     args.device = device
 
     # Setup logging
-    logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
-                        datefmt = '%m/%d/%Y %H:%M:%S',
-                        level = logging.INFO if args.local_rank in [-1, 0] else logging.WARN)
+    logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+                        datefmt='%m/%d/%Y %H:%M:%S',
+                        level=logging.INFO if args.local_rank in [-1, 0] else logging.WARN)
     logger.warning("Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",
                    args.local_rank, device, args.n_gpu, bool(args.local_rank != -1), args.fp16)
 
@@ -552,8 +572,10 @@ def main():
         num_labels=1 if args.model_type in ["roberta_mc"] else num_labels,
         finetuning_task=args.task_name
     )
-    tokenizer = tokenizer_class.from_pretrained(args.tokenizer_name if args.tokenizer_name else args.model_name_or_path, do_lower_case=args.do_lower_case)
-    model = model_class.from_pretrained(args.model_name_or_path, from_tf=bool('.ckpt' in args.model_name_or_path), config=config)
+    tokenizer = tokenizer_class.from_pretrained(args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
+                                                do_lower_case=args.do_lower_case)
+    model = model_class.from_pretrained(args.model_name_or_path, from_tf=bool('.ckpt' in args.model_name_or_path),
+                                        config=config)
 
     if args.local_rank == 0:
         torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
@@ -578,7 +600,6 @@ def main():
         global_step, tr_loss = train(args, train_dataset, model, tokenizer)
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 
-
     # Saving best-practices: if you use defaults names for the model, you can reload it using from_pretrained()
     if args.do_train and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
         # Create output directory if needed
@@ -588,7 +609,8 @@ def main():
         logger.info("Saving model checkpoint to %s", args.output_dir)
         # Save a trained model, configuration and tokenizer using `save_pretrained()`.
         # They can then be reloaded using `from_pretrained()`
-        model_to_save = model.module if hasattr(model, 'module') else model  # Take care of distributed/parallel training
+        model_to_save = model.module if hasattr(model,
+                                                'module') else model  # Take care of distributed/parallel training
         model_to_save.save_pretrained(args.output_dir)
         tokenizer.save_pretrained(args.output_dir)
 
@@ -605,7 +627,8 @@ def main():
     checkpoints = [args.output_dir]
     if args.do_eval and args.local_rank in [-1, 0]:
         if args.eval_all_checkpoints:
-            checkpoints = list(os.path.dirname(c) for c in sorted(glob.glob(args.output_dir + '/**/' + WEIGHTS_NAME, recursive=True)))
+            checkpoints = list(
+                os.path.dirname(c) for c in sorted(glob.glob(args.output_dir + '/**/' + WEIGHTS_NAME, recursive=True)))
             logging.getLogger("pytorch_transformers.modeling_utils").setLevel(logging.WARN)  # Reduce logging
         logger.info("Evaluate the following checkpoints: %s", checkpoints)
         for checkpoint in checkpoints:
@@ -615,7 +638,6 @@ def main():
             result = evaluate(args, model, tokenizer, processor, prefix=global_step, eval_split="dev")
             result = dict((k + '_{}'.format(global_step), v) for k, v in result.items())
             results.update(result)
-
 
     # Run on test
     if args.run_on_test and args.local_rank in [-1, 0]:
