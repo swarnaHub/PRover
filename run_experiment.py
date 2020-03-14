@@ -329,15 +329,21 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
                 writer.write(str(pred_proof) + "\n")
                 
                 facts_rules = sent_tokenize(example.context)
-                assert len(gold_proof) == len(facts_rules)
+                assert len(gold_proof) == len(facts_rules)+1
                 for index in range(len(gold_proof)):
                     if gold_proof[index] == 1:
-                        writer.write(facts_rules[index].strip())
+                        if index == len(gold_proof)-1:
+                            writer.write("NAF")
+                        else:
+                            writer.write(facts_rules[index].strip())
 
                 writer.write("\n")
                 for index in range(len(pred_proof)):
                     if pred_proof[index] == 1:
-                        writer.write(facts_rules[index].strip())
+                        if index == len(pred_proof)-1:
+                            writer.write("NAF")
+                        else:
+                            writer.write(facts_rules[index].strip())
                 writer.write("\n\n")
 
         if os.path.exists("/output/"):
@@ -383,7 +389,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, eval_split="t
         else:
             raise Exception("eval_split should be among train / dev / test")
 
-        features = convert_examples_to_features_RR(examples, label_list, args.max_seq_length, args.max_edge_length, tokenizer, output_mode,
+        features = convert_examples_to_features_RR(examples, label_list, args.max_seq_length, args.max_node_length, args.max_edge_length, tokenizer, output_mode,
                                                 cls_token_at_end=bool(args.model_type in ['xlnet']),            # xlnet has a cls token at the end
                                                 cls_token=tokenizer.cls_token,
                                                 sep_token=tokenizer.sep_token,
@@ -437,8 +443,10 @@ def main():
     parser.add_argument("--max_seq_length", default=512, type=int,
                         help="The maximum total input sequence length after tokenization. Sequences longer "
                              "than this will be truncated, sequences shorter will be padded.")
-    parser.add_argument("--max_edge_length", default=500, type=int,
-                        help="Maximum number of edges, chosen as (R+F)^2")
+    parser.add_argument("--max_edge_length", default=676, type=int,
+                        help="Maximum number of edges, chosen as (R+F+1)^2")
+    parser.add_argument("--max_node_length", default=26, type=int,
+                        help="Maximum number of edges, chosen as (R+F+1)")
     parser.add_argument("--do_train", action='store_true',
                         help="Whether to run training.")
     parser.add_argument("--do_eval", action='store_true',

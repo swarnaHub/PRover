@@ -62,14 +62,6 @@ class InputExample(object):
         self.label = label
 
 class RRInputExample(object):
-    def __init__(self, id, context, question, node_label, label):
-        self.id = id
-        self.context = context
-        self.question = question
-        self.node_label = node_label
-        self.label = label
-
-class RRInputExampleWithEdge(object):
     def __init__(self, id, context, question, node_label, edge_label, label):
         self.id = id
         self.context = context
@@ -89,16 +81,6 @@ class InputFeatures(object):
         self.label_id = label_id
 
 class RRFeatures(object):
-    def __init__(self, id, input_ids, input_mask, segment_ids, proof_offset, node_label, label_id):
-        self.id = id
-        self.input_ids = input_ids
-        self.input_mask = input_mask
-        self.segment_ids = segment_ids
-        self.proof_offset = proof_offset
-        self.node_label = node_label
-        self.label_id = label_id
-
-class RRFeaturesWithEdge(object):
     def __init__(self, id, input_ids, input_mask, segment_ids, proof_offset, node_label, edge_label, label_id):
         self.id = id
         self.input_ids = input_ids
@@ -169,29 +151,6 @@ class RRProcessor(DataProcessor):
     def get_labels(self):
         return [True, False]
 
-    # A hacky code to parse the proof structure
-    # TODO: Improve this
-    def _get_node_label(self, proofs, sentence_scramble, nfact, nrule):
-        proof = proofs.split("OR")[0]
-        node_label = []
-        count = 0
-        for index in sentence_scramble:
-            if index <= nfact:
-                component = "triple" + str(index)
-            else:
-                component = "rule" + str(index-nfact)
-
-            # Each component ends with a space or end bracket
-            if component+" " in proof or component+")" in proof:
-                node_label.append(1)
-                count += 1
-            else:
-                node_label.append(0)
-
-        # The number of 1s in the proof label should not be greater than the number of rules and triples
-        assert (proof.count("rule") + proof.count("triple") >= count)
-        return node_label
-
     def _get_node_edge_label(self, proofs, sentence_scramble, nfact, nrule):
         proof = proofs.split("OR")[0]
         node_label = [0] * (nfact + nrule + 1)
@@ -200,9 +159,9 @@ class RRProcessor(DataProcessor):
             nodes, edges = get_proof_graph_with_fail(proof)
         else:
             nodes, edges = get_proof_graph(proof)
-        print(proof)
-        print(nodes)
-        print(edges)
+        #print(proof)
+        #print(nodes)
+        #print(edges)
 
         component_index_map = {}
         for (i, index) in enumerate(sentence_scramble):
@@ -255,7 +214,7 @@ class RRProcessor(DataProcessor):
                 nrule = meta_record["NRule"]
                 node_label, edge_label = self._get_node_edge_label(proofs, sentence_scramble, nfact, nrule)
 
-                examples.append(RRInputExampleWithEdge(id, context, question, node_label, edge_label, label))
+                examples.append(RRInputExample(id, context, question, node_label, edge_label, label))
 
         return examples
 
@@ -388,6 +347,7 @@ def convert_examples_to_features(examples,
 def convert_examples_to_features_RR(examples,
                                  label_list,
                                  max_seq_length,
+                                 max_node_length,
                                  max_edge_length,
                                  tokenizer,
                                  output_mode,
@@ -457,115 +417,9 @@ def convert_examples_to_features_RR(examples,
             input_mask = input_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
             segment_ids = segment_ids + ([pad_token_segment_id] * padding_length)
 
-        proof_offset = proof_offset + [0] * (max_seq_length - len(proof_offset))
+        proof_offset = proof_offset + [0] * (max_node_length - len(proof_offset))
         node_label = example.node_label
-        node_label = node_label + [-100] * (max_seq_length - len(node_label))
-
-        assert len(input_ids) == max_seq_length
-        assert len(input_mask) == max_seq_length
-        assert len(segment_ids) == max_seq_length
-        assert len(proof_offset) == max_seq_length
-        assert len(node_label) == max_seq_length
-
-        label_id = label_map[example.label]
-
-        if ex_index < 5:
-            logger.info("*** Example ***")
-            logger.info("id: %s" % (example.id))
-            logger.info("tokens: %s" % " ".join(
-                [str(x) for x in tokens]))
-            logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-            logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
-            logger.info("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
-            logger.info("node_label: %s" % " ".join([str(x) for x in node_label]))
-            logger.info("label: %s (id = %d)" % (example.label, label_id))
-
-        features.append(
-            RRFeatures(id=id,
-                       input_ids=input_ids,
-                       input_mask=input_mask,
-                       segment_ids=segment_ids,
-                       proof_offset=proof_offset,
-                       node_label=node_label,
-                       label_id=label_id))
-
-    return features
-
-def convert_examples_to_features_RR_with_edges(examples,
-                                 label_list,
-                                 max_seq_length,
-                                 max_edge_length,
-                                 tokenizer,
-                                 output_mode,
-                                 cls_token_at_end=False,
-                                 pad_on_left=False,
-                                 cls_token='[CLS]',
-                                 sep_token='[SEP]',
-                                 sep_token_extra=False,
-                                 pad_token=0,
-                                 sequence_a_segment_id=0,
-                                 sequence_b_segment_id=1,
-                                 cls_token_segment_id=1,
-                                 pad_token_segment_id=0,
-                                 mask_padding_with_zero=True):
-
-    label_map = {label : i for i, label in enumerate(label_list)}
-
-    features = []
-    max_size = 0
-    for (ex_index, example) in enumerate(examples):
-        if ex_index % 10000 == 0:
-            logger.info("Writing example %d of %d" % (ex_index, len(examples)))
-
-        sentences = sent_tokenize(example.context)
-        context_tokens = []
-        proof_offset = []
-        for sentence in sentences:
-            context_tokens.extend(tokenizer.tokenize(sentence))
-            proof_offset.append(len(context_tokens))
-        max_size = max(max_size, len(context_tokens))
-
-        question_tokens = tokenizer.tokenize(example.question)
-
-        special_tokens_count = 3 if sep_token_extra else 2
-        _truncate_seq_pair(context_tokens, question_tokens, max_seq_length - special_tokens_count - 1)
-
-        tokens = context_tokens + [sep_token]
-        if sep_token_extra:
-            # roberta uses an extra separator b/w pairs of sentences
-            tokens += [sep_token]
-        segment_ids = [sequence_a_segment_id] * len(tokens)
-
-        tokens += question_tokens + [sep_token]
-        segment_ids += [sequence_b_segment_id] * (len(question_tokens) + 1)
-
-        if cls_token_at_end:
-            tokens = tokens + [cls_token]
-            segment_ids = segment_ids + [cls_token_segment_id]
-        else:
-            tokens = [cls_token] + tokens
-            segment_ids = [cls_token_segment_id] + segment_ids
-
-        input_ids = tokenizer.convert_tokens_to_ids(tokens)
-
-        # The mask has 1 for real tokens and 0 for padding tokens. Only real
-        # tokens are attended to.
-        input_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
-
-        # Zero-pad up to the sequence length.
-        padding_length = max_seq_length - len(input_ids)
-        if pad_on_left:
-            input_ids = ([pad_token] * padding_length) + input_ids
-            input_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + input_mask
-            segment_ids = ([pad_token_segment_id] * padding_length) + segment_ids
-        else:
-            input_ids = input_ids + ([pad_token] * padding_length)
-            input_mask = input_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
-            segment_ids = segment_ids + ([pad_token_segment_id] * padding_length)
-
-        proof_offset = proof_offset + [0] * (max_seq_length - len(proof_offset))
-        node_label = example.node_label
-        node_label = node_label + [-100] * (max_seq_length - len(node_label))
+        node_label = node_label + [-100] * (max_node_length - len(node_label))
 
         edge_label = example.edge_label
         edge_label = edge_label + [-100] * (max_edge_length - len(edge_label))
@@ -573,8 +427,8 @@ def convert_examples_to_features_RR_with_edges(examples,
         assert len(input_ids) == max_seq_length
         assert len(input_mask) == max_seq_length
         assert len(segment_ids) == max_seq_length
-        assert len(proof_offset) == max_seq_length
-        assert len(node_label) == max_seq_length
+        assert len(proof_offset) == max_node_length
+        assert len(node_label) == max_node_length
         assert len(edge_label) == max_edge_length
 
         label_id = label_map[example.label]
@@ -587,12 +441,13 @@ def convert_examples_to_features_RR_with_edges(examples,
             logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
             logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
             logger.info("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
+            logger.info("proof_offset: %s" % " ".join([str(x) for x in proof_offset]))
             logger.info("node_label: %s" % " ".join([str(x) for x in node_label]))
             logger.info("edge_label: %s" % " ".join([str(x) for x in edge_label]))
             logger.info("label: %s (id = %d)" % (example.label, label_id))
 
         features.append(
-            RRFeaturesWithEdge(id=id,
+            RRFeatures(id=id,
                        input_ids=input_ids,
                        input_mask=input_mask,
                        segment_ids=segment_ids,
@@ -642,26 +497,6 @@ def _truncate_seq_triple(tokens_a, tokens_b, tokens_c, max_length):
 
 def simple_accuracy(preds, labels):
     return (preds == labels).mean()
-
-
-def acc_and_f1(preds, labels):
-    acc = simple_accuracy(preds, labels)
-    f1 = f1_score(y_true=labels, y_pred=preds)
-    return {
-        "acc": acc,
-        "f1": f1,
-        "acc_and_f1": (acc + f1) / 2,
-    }
-
-
-def pearson_and_spearman(preds, labels):
-    pearson_corr = pearsonr(preds, labels)[0]
-    spearman_corr = spearmanr(preds, labels)[0]
-    return {
-        "pearson": pearson_corr,
-        "spearmanr": spearman_corr,
-        "corr": (pearson_corr + spearman_corr) / 2,
-    }
 
 
 def compute_metrics(task_name, preds, labels):

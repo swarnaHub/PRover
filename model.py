@@ -24,13 +24,15 @@ class RobertaForRRWithNodeLoss(BertPreTrainedModel):
         outputs = self.roberta(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
         sequence_output = outputs[0]
+        cls_output = sequence_output[:, 0, :]
+        naf_output = -cls_output
         logits = self.classifier(sequence_output)
 
-        max_seq_length = node_label.shape[1]
+        max_node_length = node_label.shape[1]
         batch_size = node_label.shape[0]
         embedding_dim = sequence_output.shape[2]
 
-        batch_output = torch.zeros((batch_size, max_seq_length, embedding_dim)).to("cuda")
+        batch_output = torch.zeros((batch_size, max_node_length, embedding_dim)).to("cuda")
         for batch_index in range(sequence_output.shape[0]):
             prev_index = 1
             sample_output = None
@@ -47,7 +49,12 @@ class RobertaForRRWithNodeLoss(BertPreTrainedModel):
                         sample_output = sentence_output
                     else:
                         sample_output = torch.cat((sample_output, sentence_output), dim=0)
-            sample_output = torch.cat((sample_output, torch.zeros((max_seq_length-count, embedding_dim)).to("cuda")), dim=0)
+
+            # Add the NAF output at the end
+            sample_output = torch.cat((sample_output, naf_output[batch_index].unsqueeze(0)), dim=0)
+
+            # Append 0s at the end (these will be ignored for loss)
+            sample_output = torch.cat((sample_output, torch.zeros((max_node_length-count-1, embedding_dim)).to("cuda")), dim=0)
             batch_output[batch_index, :, :] = sample_output
 
         sequence_logits = self.classifier_sequence(batch_output)
