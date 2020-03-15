@@ -1,3 +1,7 @@
+#x = "((((((triple9) -> rule7) triple6) -> rule3)) -> rule4)"
+#x = "[(((((triple11 ((((triple11 ((triple11) -> rule2)) -> rule1)) -> rule4)) -> rule3) ((((triple11 ((triple11) -> rule2)) -> rule1)) -> rule4)) -> rule5))]"
+x = "[(((((((NAF) -> rule6)) -> rule4) NAF) -> rule7))]"
+
 class Node:
     def __init__(self, head, elements):
         self.head = head
@@ -84,3 +88,7 @@ def get_proof_graph_with_fail(proof_str):
             all_edges.append((nodes[i+1], nodes[i]))
 
     return all_nodes, all_edges
+
+
+all_nodes, all_edges = get_proof_graph(x)
+print(all_edges)

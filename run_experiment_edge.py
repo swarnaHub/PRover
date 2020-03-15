@@ -54,7 +54,7 @@ from pytorch_transformers import AdamW, WarmupLinearSchedule
 from model import RobertaForRRWithEdgeLoss, RobertaForMultipleChoice
 from utils import (compute_metrics, compute_sequence_metrics, convert_examples_to_features,
                    output_modes, processors,
-                   convert_examples_to_features_RR_with_edges)
+                   convert_examples_to_features_RR)
 
 from nltk.tokenize import sent_tokenize
 
@@ -159,16 +159,18 @@ def train(args, train_dataset, model, tokenizer):
                       'token_type_ids': batch[2] if args.model_type in ['bert', 'xlnet', 'bert_mc'] else None,
                       # XLM don't use segment_ids
                       'proof_offset': batch[3],
-                      'edge_label': batch[4],
-                      'labels': batch[5]}
+                      'node_label': batch[4],
+                      'edge_label': batch[5],
+                      'labels': batch[6]}
             outputs = model(**inputs)
-            loss, qa_loss, seq_loss = outputs[:3]  # model outputs are always tuple in pytorch-transformers (see doc)
+            loss, qa_loss, node_loss, edge_loss = outputs[:4]  # model outputs are always tuple in pytorch-transformers (see doc)
 
             if args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average on multi-gpu parallel training
                 # logger.info("Loss = %f", loss)
                 # logger.info("QA Loss = %f", qa_loss.mean())
-                # logger.info("Sequence Loss = %f", seq_loss.mean())
+                # logger.info("Node Loss = %f", node_loss.mean())
+                # logger.info("Edge Loss = %f", edge_loss.mean())
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
 
@@ -256,7 +258,7 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
         eval_loss = 0.0
         nb_eval_steps = 0
         preds = None
-        sequence_preds = None
+        node_preds = None
         out_label_ids = None
         out_sequence_label_ids = None
         for batch in tqdm(eval_dataloader, desc="Evaluating", mininterval=10, ncols=100):
@@ -269,37 +271,35 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
                           'token_type_ids': batch[2] if args.model_type in ['bert', 'xlnet', 'bert_mc'] else None,
                           # XLM don't use segment_ids
                           'proof_offset': batch[3],
-                          'edge_label': batch[4],
-                          'labels': batch[5]}
+                          'node_label': batch[4],
+                          'edge_label': batch[5],
+                          'labels': batch[6]}
                 outputs = model(**inputs)
-                tmp_eval_loss, tmp_qa_loss, tmp_seq_loss, logits, sequence_logits = outputs[:5]
+                tmp_eval_loss, tmp_qa_loss, tmp_node_loss, tmp_edge_loss, logits, node_logits, edge_logits = outputs[:7]
 
                 eval_loss += tmp_eval_loss.mean().item()
             nb_eval_steps += 1
             if preds is None:
                 preds = logits.detach().cpu().numpy()
-                sequence_preds = sequence_logits.detach().cpu().numpy()
+                node_preds = node_logits.detach().cpu().numpy()
                 if not eval_split == "test":
                     out_label_ids = inputs['labels'].detach().cpu().numpy()
                     out_sequence_label_ids = inputs['edge_label'].detach().cpu().numpy()
             else:
                 preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
-                sequence_preds = np.append(sequence_preds, sequence_logits.detach().cpu().numpy(), axis=0)
+                node_preds = np.append(node_preds, node_logits.detach().cpu().numpy(), axis=0)
                 if not eval_split == "test":
                     out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
                     out_sequence_label_ids = np.append(out_sequence_label_ids,
                                                        inputs['edge_label'].detach().cpu().numpy(), axis=0)
 
         eval_loss = eval_loss / nb_eval_steps
-        if args.output_mode == "classification" or args.output_mode == "multiple_choice":
-            preds = np.argmax(preds, axis=1)
-            sequence_preds = np.argmax(sequence_preds, axis=2)
-        elif args.output_mode == "regression":
-            preds = np.squeeze(preds)
+        preds = np.argmax(preds, axis=1)
+        node_preds = np.argmax(node_preds, axis=2)
 
         if not eval_split == "test":
             result = compute_metrics(eval_task, preds, out_label_ids)
-            result_sequence = compute_sequence_metrics(eval_task, sequence_preds, out_sequence_label_ids)
+            result_sequence = compute_sequence_metrics(eval_task, node_preds, out_sequence_label_ids)
             result_split = {}
             for k, v in result.items():
                 result_split[k + "_{}".format(eval_split)] = v
@@ -330,22 +330,28 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
                 writer.write(example.question + "\n")
                 gold_proof = out_sequence_label_ids[ex_index]
                 gold_proof = gold_proof[np.where(gold_proof != -100)[0]]
-                pred_proof = sequence_preds[ex_index][:len(gold_proof)]
+                pred_proof = node_preds[ex_index][:len(gold_proof)]
                 writer.write("Correct" + "\n") if np.array_equal(gold_proof, pred_proof) else writer.write(
                     "Incorrect\n")
                 writer.write(str(gold_proof) + "\n")
                 writer.write(str(pred_proof) + "\n")
 
                 facts_rules = sent_tokenize(example.context)
-                assert len(gold_proof) == len(facts_rules)
+                assert len(gold_proof) == len(facts_rules) + 1
                 for index in range(len(gold_proof)):
                     if gold_proof[index] == 1:
-                        writer.write(facts_rules[index].strip())
+                        if index == len(gold_proof) - 1:
+                            writer.write("NAF")
+                        else:
+                            writer.write(facts_rules[index].strip())
 
                 writer.write("\n")
                 for index in range(len(pred_proof)):
                     if pred_proof[index] == 1:
-                        writer.write(facts_rules[index].strip())
+                        if index == len(pred_proof) - 1:
+                            writer.write("NAF")
+                        else:
+                            writer.write(facts_rules[index].strip())
                 writer.write("\n\n")
 
         if os.path.exists("/output/"):
@@ -391,7 +397,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, eval_split="t
         else:
             raise Exception("eval_split should be among train / dev / test")
 
-        features = convert_examples_to_features_RR_with_edges(examples, label_list, args.max_seq_length, args.max_edge_length,
+        features = convert_examples_to_features_RR(examples, label_list, args.max_seq_length, args.max_node_length, args.max_edge_length,
                                                    tokenizer, output_mode,
                                                    cls_token_at_end=bool(args.model_type in ['xlnet']),
                                                    # xlnet has a cls token at the end
@@ -454,8 +460,10 @@ def main():
     parser.add_argument("--max_seq_length", default=512, type=int,
                         help="The maximum total input sequence length after tokenization. Sequences longer "
                              "than this will be truncated, sequences shorter will be padded.")
-    parser.add_argument("--max_edge_length", default=500, type=int,
-                        help="Maximum number of edges, chosen as (R+F)^2")
+    parser.add_argument("--max_edge_length", default=676, type=int,
+                        help="Maximum number of edges, chosen as (R+F+1)^2")
+    parser.add_argument("--max_node_length", default=26, type=int,
+                        help="Maximum number of nodes, chosen as (R+F+1)")
     parser.add_argument("--do_train", action='store_true',
                         help="Whether to run training.")
     parser.add_argument("--do_eval", action='store_true',

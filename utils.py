@@ -154,7 +154,7 @@ class RRProcessor(DataProcessor):
     def _get_node_edge_label(self, proofs, sentence_scramble, nfact, nrule):
         proof = proofs.split("OR")[0]
         node_label = [0] * (nfact + nrule + 1)
-        edge_label = [0] * (nfact + nrule + 1) * (nfact + nrule + 1)
+        edge_label = np.zeros((nfact+nrule+1, nfact+nrule+1))
         if "FAIL" in proof:
             nodes, edges = get_proof_graph_with_fail(proof)
         else:
@@ -178,6 +178,7 @@ class RRProcessor(DataProcessor):
                 index = nfact+nrule
             node_label[index] = 1
 
+        edges = list(set(edges))
         for edge in edges:
             if edge[0] != "NAF":
                 start_index = component_index_map[edge[0]]
@@ -188,9 +189,24 @@ class RRProcessor(DataProcessor):
             else:
                 end_index = nfact+nrule
 
-            edge_label[start_index*(nfact+nrule+1) + end_index] = 1
+            #edge_label[start_index*(nfact+nrule+1) + end_index] = 1
+            if start_index < end_index:
+                # No cycle possible, hence should not be set before
+                if edge_label[start_index][end_index] != 0:
+                    print("here")
+                edge_label[start_index][end_index] = 1
+                # Lower triangle labels are ignored
+                edge_label[end_index][start_index] = -100
+            else:
+                if edge_label[end_index][start_index] != 0:
+                    print("here")
+                edge_label[end_index][start_index] = 2
+                edge_label[start_index][end_index] = -100
 
-        return node_label, edge_label
+        # Flatten the edge label in upper triangle (offset diagonal 1)
+        #edge_label = edge_label[np.triu_indices((nfact+nrule+1), 1)]
+
+        return node_label, list(edge_label.flatten())
 
     def _create_examples(self, records, meta_records):
         examples = []
