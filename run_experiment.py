@@ -253,7 +253,7 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
         preds = None
         node_preds = None
         out_label_ids = None
-        out_sequence_label_ids = None
+        out_node_label_ids = None
         for batch in tqdm(eval_dataloader, desc="Evaluating", mininterval=10, ncols=100):
             model.eval()
             batch = tuple(t.to(args.device) for t in batch)
@@ -275,13 +275,13 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
                 node_preds = node_logits.detach().cpu().numpy()
                 if not eval_split == "test":
                     out_label_ids = inputs['labels'].detach().cpu().numpy()
-                    out_sequence_label_ids = inputs['node_label'].detach().cpu().numpy()
+                    out_node_label_ids = inputs['node_label'].detach().cpu().numpy()
             else:
                 preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
                 node_preds = np.append(node_preds, node_logits.detach().cpu().numpy(), axis=0)
                 if not eval_split == "test":
                     out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
-                    out_sequence_label_ids = np.append(out_sequence_label_ids, inputs['node_label'].detach().cpu().numpy(), axis=0)
+                    out_node_label_ids = np.append(out_node_label_ids, inputs['node_label'].detach().cpu().numpy(), axis=0)
 
         eval_loss = eval_loss / nb_eval_steps
         preds = np.argmax(preds, axis=1)
@@ -289,11 +289,11 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
 
         if not eval_split == "test":
             result = compute_metrics(eval_task, preds, out_label_ids)
-            result_sequence = compute_sequence_metrics(eval_task, node_preds, out_sequence_label_ids)
+            result_node = compute_sequence_metrics(eval_task, node_preds, out_node_label_ids, True)
             result_split = {}
             for k, v in result.items():
                 result_split[k + "_{}".format(eval_split)] = v
-            for k, v in result_sequence.items():
+            for k, v in result_node.items():
                 result_split[k + "_{}".format(eval_split)] = v
             results.update(result_split)
 
@@ -318,7 +318,7 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
             for (ex_index, example) in enumerate(examples):
                 writer.write(example.context + "\n")
                 writer.write(example.question + "\n")
-                gold_proof = out_sequence_label_ids[ex_index]
+                gold_proof = out_node_label_ids[ex_index]
                 gold_proof = gold_proof[np.where(gold_proof != -100)[0]]
                 pred_proof = node_preds[ex_index][:len(gold_proof)]
                 writer.write("Correct"+"\n") if np.array_equal(gold_proof, pred_proof) else writer.write("Incorrect\n")

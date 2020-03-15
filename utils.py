@@ -518,7 +518,8 @@ def compute_metrics(task_name, preds, labels):
     else:
         raise KeyError(task_name)
 
-def compute_sequence_metrics(task_name, sequence_preds, sequence_labels):
+def compute_sequence_metrics(task_name, sequence_preds, sequence_labels, is_node):
+    # TODO: Fix the prec, recall metrics for edge prediction
     assert len(sequence_preds) == len(sequence_labels)
     overall_precision, overall_recall, overall_f1 = 0.0, 0.0, 0.0
     all_correct = 0
@@ -526,8 +527,9 @@ def compute_sequence_metrics(task_name, sequence_preds, sequence_labels):
         gold_positive, pred_positive, correct_positive = 0, 0, 0
         j = 0
         for j in range(len(sequence_labels[i])):
-            if sequence_labels[i][j] == -100: # Ignore index
-                break
+            if sequence_labels[i][j] == -100: # Ignore index, so copy it
+                sequence_preds[i][j] = -100
+                continue
             if sequence_labels[i][j] == sequence_preds[i][j] and sequence_labels[i][j] == 1:
                 correct_positive += 1
             if sequence_labels[i][j] == 1:
@@ -543,14 +545,17 @@ def compute_sequence_metrics(task_name, sequence_preds, sequence_labels):
         if precision + recall > 0:
             overall_f1 += 2*precision*recall/(precision + recall)
         # If they match exactly, then it's fully correct
-        if np.array_equal(sequence_labels[i][:j], sequence_preds[i][:j]):
+        if np.array_equal(sequence_labels[i], sequence_preds[i]):
             all_correct += 1
 
     overall_precision /= len(sequence_labels)
     overall_recall /= len(sequence_labels)
     overall_f1 /= len(sequence_labels)
     correct_accuracy = all_correct/len(sequence_labels)
-    return {"seq_prec": overall_precision, "seq_recall": overall_recall, "seq_f1": overall_f1, "seq_acc": correct_accuracy}
+    if is_node:
+        return {"node_prec": overall_precision, "node_recall": overall_recall, "node_f1": overall_f1, "node_acc": correct_accuracy}
+    else:
+        return {"edge_acc": correct_accuracy}
 
 
 processors = {

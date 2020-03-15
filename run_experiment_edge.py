@@ -259,8 +259,10 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
         nb_eval_steps = 0
         preds = None
         node_preds = None
+        edge_preds = None
         out_label_ids = None
-        out_sequence_label_ids = None
+        out_node_label_ids = None
+        out_edge_label_ids = None
         for batch in tqdm(eval_dataloader, desc="Evaluating", mininterval=10, ncols=100):
             model.eval()
             batch = tuple(t.to(args.device) for t in batch)
@@ -282,28 +284,37 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
             if preds is None:
                 preds = logits.detach().cpu().numpy()
                 node_preds = node_logits.detach().cpu().numpy()
+                edge_preds = edge_logits.detach().cpu().numpy()
                 if not eval_split == "test":
                     out_label_ids = inputs['labels'].detach().cpu().numpy()
-                    out_sequence_label_ids = inputs['edge_label'].detach().cpu().numpy()
+                    out_node_label_ids = inputs['node_label'].detach().cpu().numpy()
+                    out_edge_label_ids = inputs['edge_label'].detach().cpu().numpy()
             else:
                 preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
                 node_preds = np.append(node_preds, node_logits.detach().cpu().numpy(), axis=0)
+                edge_preds = np.append(edge_preds, edge_logits.detach().cpu().numpy(), axis=0)
                 if not eval_split == "test":
                     out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
-                    out_sequence_label_ids = np.append(out_sequence_label_ids,
-                                                       inputs['edge_label'].detach().cpu().numpy(), axis=0)
+                    out_node_label_ids = np.append(out_node_label_ids,
+                                                       inputs['node_label'].detach().cpu().numpy(), axis=0)
+                    out_edge_label_ids = np.append(out_edge_label_ids,
+                                                   inputs['edge_label'].detach().cpu().numpy(), axis=0)
 
         eval_loss = eval_loss / nb_eval_steps
         preds = np.argmax(preds, axis=1)
         node_preds = np.argmax(node_preds, axis=2)
+        edge_preds = np.argmax(edge_preds, axis=2)
 
         if not eval_split == "test":
             result = compute_metrics(eval_task, preds, out_label_ids)
-            result_sequence = compute_sequence_metrics(eval_task, node_preds, out_sequence_label_ids)
+            result_node = compute_sequence_metrics(eval_task, node_preds, out_node_label_ids, True)
+            result_edge = compute_sequence_metrics(eval_task, edge_preds, out_edge_label_ids, False)
             result_split = {}
             for k, v in result.items():
                 result_split[k + "_{}".format(eval_split)] = v
-            for k, v in result_sequence.items():
+            for k, v in result_node.items():
+                result_split[k + "_{}".format(eval_split)] = v
+            for k, v in result_edge.items():
                 result_split[k + "_{}".format(eval_split)] = v
             results.update(result_split)
 
@@ -322,13 +333,13 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
                 writer.write("{}\n".format(processor.get_labels()[pred]))
 
         # prediction proofs
-        output_proof_pred_file = os.path.join(eval_output_dir, "prediction_edges_{}.lst".format(eval_split))
+        output_proof_pred_file = os.path.join(eval_output_dir, "prediction_nodes_{}.lst".format(eval_split))
         with open(output_proof_pred_file, "w") as writer:
             logger.info("***** Write predictions {} on {} *****".format(prefix, eval_split))
             for (ex_index, example) in enumerate(examples):
                 writer.write(example.context + "\n")
                 writer.write(example.question + "\n")
-                gold_proof = out_sequence_label_ids[ex_index]
+                gold_proof = out_node_label_ids[ex_index]
                 gold_proof = gold_proof[np.where(gold_proof != -100)[0]]
                 pred_proof = node_preds[ex_index][:len(gold_proof)]
                 writer.write("Correct" + "\n") if np.array_equal(gold_proof, pred_proof) else writer.write(

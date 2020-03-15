@@ -83,11 +83,11 @@ class RobertaForRRWithEdgeLoss(BertPreTrainedModel):
         self.roberta = RobertaModel(config)
         self.classifier = RobertaClassificationHead(config)
         self.classifier_node = torch.nn.Linear(config.hidden_size, self.num_labels)
-        self.classifier_edge = torch.nn.Linear(config.hidden_size, self.num_labels_edge)
+        self.classifier_edge = torch.nn.Linear(2*config.hidden_size, self.num_labels_edge)
 
         self.apply(self.init_weights)
 
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, proof_offset=None, node_label= None,
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, proof_offset=None, node_label=None,
                 edge_label=None, labels=None, position_ids=None, head_mask=None):
         outputs = self.roberta(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
                             attention_mask=attention_mask, head_mask=head_mask)
