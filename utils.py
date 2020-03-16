@@ -387,8 +387,10 @@ def convert_examples_to_features_RR(examples,
         context_tokens = []
         proof_offset = []
         for sentence in sentences:
-            context_tokens.extend(tokenizer.tokenize(sentence))
+            sentence_tokens = tokenizer.tokenize(sentence)
+            context_tokens.extend(sentence_tokens)
             proof_offset.append(len(context_tokens))
+            #proof_offset.append(len(sentence_tokens)) # Uncomment this for the efficient model
         max_size = max(max_size, len(context_tokens))
 
         question_tokens = tokenizer.tokenize(example.question)

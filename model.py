@@ -3,6 +3,7 @@ from pytorch_transformers import BertPreTrainedModel, RobertaConfig, \
 from pytorch_transformers.modeling_roberta import RobertaClassificationHead
 from torch.nn import CrossEntropyLoss, BCEWithLogitsLoss
 import torch
+from torch.nn.utils.rnn import pad_sequence
 
 class RobertaForRRWithNodeLoss(BertPreTrainedModel):
     config_class = RobertaConfig
@@ -55,6 +56,72 @@ class RobertaForRRWithNodeLoss(BertPreTrainedModel):
 
             # Append 0s at the end (these will be ignored for loss)
             sample_node_embedding = torch.cat((sample_node_embedding, torch.zeros((max_node_length-count-1, embedding_dim)).to("cuda")), dim=0)
+            batch_node_embedding[batch_index, :, :] = sample_node_embedding
+
+        node_logits = self.classifier_node(batch_node_embedding)
+
+        outputs = (logits, node_logits) + outputs[2:]
+        if labels is not None:
+            loss_fct = CrossEntropyLoss()
+            qa_loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            node_loss = loss_fct(node_logits.view(-1, self.num_labels), node_label.view(-1))
+            total_loss = qa_loss + node_loss
+            outputs = (total_loss, qa_loss, node_loss) + outputs
+
+        return outputs  # (total_loss), qa_loss, node_loss, logits, node_logits, (hidden_states), (attentions)
+
+class RobertaForRRWithNodeLossEfficient(BertPreTrainedModel):
+    config_class = RobertaConfig
+    pretrained_model_archive_map = ROBERTA_PRETRAINED_MODEL_ARCHIVE_MAP
+    base_model_prefix = "roberta"
+
+    def __init__(self, config):
+        super(RobertaForRRWithNodeLossEfficient, self).__init__(config)
+
+        self.num_labels = config.num_labels
+        self.roberta = RobertaModel(config)
+        self.classifier = RobertaClassificationHead(config)
+        self.classifier_node = torch.nn.Linear(config.hidden_size, config.num_labels)
+
+        self.apply(self.init_weights)
+
+    def _average_embedding(self, data, input_lens):
+        N, C, H = data.shape[0], data.shape[1], data.shape[2]
+        idx = torch.arange(C).unsqueeze(0).expand(N, -1).to("cuda")
+        idx = idx < input_lens.unsqueeze(1)
+        idx = idx.unsqueeze(2).expand(-1, -1, H)
+        ret = (data * idx.float()).sum(1) / input_lens.unsqueeze(1).float()
+        return ret
+
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, proof_offset=None, node_label=None, labels=None,
+                position_ids=None, head_mask=None):
+        outputs = self.roberta(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
+                            attention_mask=attention_mask, head_mask=head_mask)
+        sequence_output = outputs[0]
+        cls_output = sequence_output[:, 0, :]
+        naf_output = -cls_output
+        logits = self.classifier(sequence_output)
+
+        max_node_length = node_label.shape[1]
+        batch_size = node_label.shape[0]
+        embedding_dim = sequence_output.shape[2]
+
+        batch_node_embedding = torch.zeros((batch_size, max_node_length, embedding_dim)).to("cuda")
+        for batch_index in range(batch_size):
+            lengths = proof_offset[batch_index]
+            lengths = lengths[:torch.sum(lengths != 0)]
+            sequence_output_context = sequence_output[batch_index, 1:torch.sum(lengths)+1, :]
+            split_embeddings = list(torch.split(sequence_output_context, lengths.tolist()))
+            padded_split_embeddings = pad_sequence(split_embeddings, batch_first=True)
+
+            sample_node_embedding = self._average_embedding(padded_split_embeddings, lengths)
+
+            # Add the NAF output at the end
+            sample_node_embedding = torch.cat((sample_node_embedding, naf_output[batch_index].unsqueeze(0)), dim=0)
+
+            # Append 0s at the end (these will be ignored for loss)
+            sample_node_embedding = torch.cat((sample_node_embedding, torch.zeros((max_node_length-lengths.shape[0]-1,
+                                                                                   embedding_dim)).to("cuda")), dim=0)
             batch_node_embedding[batch_index, :, :] = sample_node_embedding
 
         node_logits = self.classifier_node(batch_node_embedding)
