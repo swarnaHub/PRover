@@ -289,7 +289,7 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
 
         if not eval_split == "test":
             result = compute_metrics(eval_task, preds, out_label_ids)
-            result_node = compute_sequence_metrics(eval_task, node_preds, out_node_label_ids, True)
+            result_node = compute_sequence_metrics(eval_task, node_preds, out_node_label_ids)
             result_split = {}
             for k, v in result.items():
                 result_split[k + "_{}".format(eval_split)] = v

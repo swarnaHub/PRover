@@ -153,13 +153,13 @@ class RRProcessor(DataProcessor):
 
     def _get_node_edge_label(self, proofs, sentence_scramble, nfact, nrule):
         proof = proofs.split("OR")[0]
+        #print(proof)
         node_label = [0] * (nfact + nrule + 1)
         edge_label = np.zeros((nfact+nrule+1, nfact+nrule+1), dtype=int)
         if "FAIL" in proof:
             nodes, edges = get_proof_graph_with_fail(proof)
         else:
             nodes, edges = get_proof_graph(proof)
-        #print(proof)
         #print(nodes)
         #print(edges)
 
@@ -207,6 +207,7 @@ class RRProcessor(DataProcessor):
     def _create_examples(self, records, meta_records):
         examples = []
         for (i, (record, meta_record)) in enumerate(zip(records, meta_records)):
+            #print(i)
             assert record["id"] == meta_record["id"]
             context = record["context"]
             sentence_scramble = record["meta"]["sentenceScramble"]
@@ -470,6 +471,9 @@ def convert_examples_to_features_RR(examples,
                        edge_label=edge_label,
                        label_id=label_id))
 
+        if ex_index == 100:
+            break
+
     return features
 
 
@@ -520,8 +524,7 @@ def compute_metrics(task_name, preds, labels):
     else:
         raise KeyError(task_name)
 
-def compute_sequence_metrics(task_name, sequence_preds, sequence_labels, is_node):
-    # TODO: Fix the prec, recall metrics for edge prediction
+def compute_sequence_metrics(task_name, sequence_preds, sequence_labels):
     assert len(sequence_preds) == len(sequence_labels)
     overall_precision, overall_recall, overall_f1 = 0.0, 0.0, 0.0
     all_correct = 0
@@ -554,10 +557,37 @@ def compute_sequence_metrics(task_name, sequence_preds, sequence_labels, is_node
     overall_recall /= len(sequence_labels)
     overall_f1 /= len(sequence_labels)
     correct_accuracy = all_correct/len(sequence_labels)
-    if is_node:
-        return {"node_prec": overall_precision, "node_recall": overall_recall, "node_f1": overall_f1, "node_acc": correct_accuracy}
-    else:
-        return {"edge_acc": correct_accuracy}
+
+    return {"node_prec": overall_precision, "node_recall": overall_recall, "node_f1": overall_f1, "node_acc": correct_accuracy}
+
+def compute_graph_metrics(task_name, node_preds, out_node_label_ids, edge_preds, out_edge_label_ids):
+    assert len(node_preds) == len(out_node_label_ids)
+    assert len(edge_preds) == len(out_edge_label_ids)
+    assert len(node_preds) == len(edge_preds)
+    correct_node, correct_edge, correct_graph = 0, 0, 0
+    for i in range(len(out_node_label_ids)):
+        for j in range(len(out_node_label_ids[i])):
+            if out_node_label_ids[i][j] == -100: # Ignore index, so copy it
+                node_preds[i][j] = -100
+                continue
+
+        for j in range(len(out_edge_label_ids[i])):
+            if out_edge_label_ids[i][j] == -100:
+                edge_preds[i][j] = -100
+
+        # If they match exactly, then it's fully correct
+        if np.array_equal(out_node_label_ids[i], node_preds[i]):
+            correct_node += 1
+
+        if np.array_equal(out_edge_label_ids[i], edge_preds[i]):
+            correct_edge += 1
+
+        if np.array_equal(out_node_label_ids[i], node_preds[i]) and np.array_equal(out_edge_label_ids[i], edge_preds[i]):
+            correct_graph += 1
+
+    return {"node_acc": correct_node/len(node_preds),
+            "edge_acc": correct_edge/len(edge_preds),
+            "graph_acc": correct_edge/len(edge_preds)}
 
 
 processors = {

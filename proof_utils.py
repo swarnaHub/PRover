@@ -58,7 +58,7 @@ def get_proof_graph(proof_str):
             else:
                 all_elems = []
                 # A new terminal node can get appended to a maximum of two nodes
-                assert(len(pop_list)) <= 2
+                assert(len(pop_list)) <= 3
 
                 for p in pop_list:
                     all_edges.append((p.head, x))

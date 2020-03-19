@@ -52,7 +52,7 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
 from pytorch_transformers import AdamW, WarmupLinearSchedule
 
 from model import RobertaForRRWithEdgeLoss, RobertaForMultipleChoice
-from utils import (compute_metrics, compute_sequence_metrics, convert_examples_to_features,
+from utils import (compute_metrics, compute_sequence_metrics, compute_graph_metrics, convert_examples_to_features,
                    output_modes, processors,
                    convert_examples_to_features_RR)
 
@@ -225,7 +225,6 @@ def train(args, train_dataset, model, tokenizer):
 
     return global_step, tr_loss / global_step
 
-
 def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
     eval_task_names = (args.task_name,)
     eval_outputs_dirs = (args.output_dir,)
@@ -307,14 +306,11 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
 
         if not eval_split == "test":
             result = compute_metrics(eval_task, preds, out_label_ids)
-            result_node = compute_sequence_metrics(eval_task, node_preds, out_node_label_ids, True)
-            result_edge = compute_sequence_metrics(eval_task, edge_preds, out_edge_label_ids, False)
+            result_graph = compute_graph_metrics(eval_task, node_preds, out_node_label_ids, edge_preds, out_edge_label_ids)
             result_split = {}
             for k, v in result.items():
                 result_split[k + "_{}".format(eval_split)] = v
-            for k, v in result_node.items():
-                result_split[k + "_{}".format(eval_split)] = v
-            for k, v in result_edge.items():
+            for k, v in result_graph.items():
                 result_split[k + "_{}".format(eval_split)] = v
             results.update(result_split)
 
@@ -333,7 +329,7 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
                 writer.write("{}\n".format(processor.get_labels()[pred]))
 
         # prediction proofs
-        output_proof_pred_file = os.path.join(eval_output_dir, "prediction_nodes_{}.lst".format(eval_split))
+        output_proof_pred_file = os.path.join(eval_output_dir, "prediction_graphs_{}.lst".format(eval_split))
         with open(output_proof_pred_file, "w") as writer:
             logger.info("***** Write predictions {} on {} *****".format(prefix, eval_split))
             for (ex_index, example) in enumerate(examples):
@@ -363,6 +359,23 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
                             writer.write("NAF")
                         else:
                             writer.write(facts_rules[index].strip())
+
+                writer.write("\n")
+
+                writer.write(str(np.where(gold_proof == 1)[0]) + "\n")
+                writer.write(str(np.where(pred_proof == 1)[0]) + "\n")
+
+                gold_edge = out_edge_label_ids[ex_index][:(len(gold_proof)*len(gold_proof))]
+                pred_edge = edge_preds[ex_index][:len(gold_edge)]
+                gold_edge = gold_edge.reshape(-1, len(gold_proof))
+                pred_edge = pred_edge.reshape(-1, len(gold_proof))
+
+                writer.write(str(np.where(gold_edge == 1)) + "\n")
+                writer.write(str(np.where(gold_edge == 2)) + "\n")
+                writer.write(str(np.where(pred_edge == 1)) + "\n")
+                writer.write(str(np.where(pred_edge == 2)) + "\n")
+
+
                 writer.write("\n\n")
 
         if os.path.exists("/output/"):
@@ -588,7 +601,7 @@ def main():
     config_class, model_class, tokenizer_class = MODEL_CLASSES[args.model_type]
     config = config_class.from_pretrained(
         args.config_name if args.config_name else args.model_name_or_path,
-        num_labels=1 if args.model_type in ["roberta_mc"] else num_labels,
+        num_labels=num_labels,
         finetuning_task=args.task_name
     )
     tokenizer = tokenizer_class.from_pretrained(args.tokenizer_name if args.tokenizer_name else args.model_name_or_path,
