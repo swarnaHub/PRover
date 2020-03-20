@@ -471,9 +471,6 @@ def convert_examples_to_features_RR(examples,
                        edge_label=edge_label,
                        label_id=label_id))
 
-        if ex_index == 100:
-            break
-
     return features
 
 
