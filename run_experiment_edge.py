@@ -370,10 +370,17 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
                 gold_edge = gold_edge.reshape(-1, len(gold_proof))
                 pred_edge = pred_edge.reshape(-1, len(gold_proof))
 
-                writer.write(str(np.where(gold_edge == 1)) + "\n")
-                writer.write(str(np.where(gold_edge == 2)) + "\n")
-                writer.write(str(np.where(pred_edge == 1)) + "\n")
-                writer.write(str(np.where(pred_edge == 2)) + "\n")
+                gold_edge1 = np.where(gold_edge == 1)
+                gold_edge2 = (np.where(gold_edge == 2)[1], np.where(gold_edge == 2)[0])
+
+                writer.write(str(list(gold_edge1[0]) + list(gold_edge2[0])) + "\n")
+                writer.write(str(list(gold_edge1[1]) + list(gold_edge2[1])) + "\n")
+
+                pred_edge1 = np.where(pred_edge == 1)
+                pred_edge2 = (np.where(pred_edge == 2)[1], np.where(pred_edge == 2)[0])
+
+                writer.write(str(list(pred_edge1[0]) + list(pred_edge2[0])) + "\n")
+                writer.write(str(list(pred_edge1[1]) + list(pred_edge2[1])) + "\n")
 
 
                 writer.write("\n\n")
