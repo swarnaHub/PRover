@@ -202,6 +202,12 @@ class RRProcessor(DataProcessor):
         # Set lower triangle labels to -100
         edge_label[np.tril_indices((nfact+nrule+1), 0)] = -100
 
+        # Set edges to irrelevant nodes to -100
+        for start_index in range(len(node_label)):
+            for end_index in range(len(node_label)):
+                if start_index < end_index and (node_label[start_index] == 0 or node_label[end_index] == 0):
+                    edge_label[start_index][end_index] = -100
+
         return node_label, list(edge_label.flatten())
 
     def _create_examples(self, records, meta_records):
@@ -210,6 +216,8 @@ class RRProcessor(DataProcessor):
             #print(i)
             assert record["id"] == meta_record["id"]
             context = record["context"]
+            #if "not" in context:
+            #    continue
             sentence_scramble = record["meta"]["sentenceScramble"]
             for (j, question) in enumerate(record["questions"]):
                 # Uncomment to train/evaluate at a certain depth
