@@ -61,6 +61,13 @@ class InputExample(object):
         self.text_b = text_b
         self.label = label
 
+class RRInputExampleQA(object):
+    def __init__(self, id, context, question, label):
+        self.id = id
+        self.context = context
+        self.question = question
+        self.label = label
+
 class RRInputExample(object):
     def __init__(self, id, context, question, node_label, edge_label, label):
         self.id = id
@@ -75,6 +82,14 @@ class InputFeatures(object):
     """A single set of features of data."""
 
     def __init__(self, input_ids, input_mask, segment_ids, label_id):
+        self.input_ids = input_ids
+        self.input_mask = input_mask
+        self.segment_ids = segment_ids
+        self.label_id = label_id
+
+class RRFeaturesQA(object):
+    def __init__(self, id, input_ids, input_mask, segment_ids, label_id):
+        self.id = id
         self.input_ids = input_ids
         self.input_mask = input_mask
         self.segment_ids = segment_ids
@@ -132,6 +147,43 @@ class DataProcessor(object):
                 records.append(json.loads(line))
             return records
 
+class RRProcessorQA(DataProcessor):
+    def get_train_examples(self, data_dir):
+        return self._create_examples(
+            self._read_jsonl(os.path.join(data_dir, "train.jsonl")),
+            self._read_jsonl(os.path.join(data_dir, "meta-train.jsonl")))
+
+    def get_dev_examples(self, data_dir):
+        return self._create_examples(
+            self._read_jsonl(os.path.join(data_dir, "test.jsonl")),
+            self._read_jsonl(os.path.join(data_dir, "meta-test.jsonl")))
+
+    def get_test_examples(self, data_dir):
+        return self._create_examples(
+            self._read_jsonl(os.path.join(data_dir, "test.jsonl")),
+            self._read_jsonl(os.path.join(data_dir, "meta-test.jsonl")))
+
+    def get_labels(self):
+        return [True, False]
+
+    def _create_examples(self, records, meta_records):
+        examples = []
+        for (i, (record, meta_record)) in enumerate(zip(records, meta_records)):
+            print(i)
+            assert record["id"] == meta_record["id"]
+            context = record["context"]
+            for (j, question) in enumerate(record["questions"]):
+                id = question["id"]
+                label = question["label"]
+                #if question["meta"]["QDep"] != 3:
+                #    continue
+                question = question["text"]
+
+                examples.append(RRInputExampleQA(id, context, question, label))
+
+        return examples
+
+
 class RRProcessor(DataProcessor):
     def get_train_examples(self, data_dir):
         return self._create_examples(
@@ -153,15 +205,16 @@ class RRProcessor(DataProcessor):
 
     def _get_node_edge_label(self, proofs, sentence_scramble, nfact, nrule):
         proof = proofs.split("OR")[0]
-        #print(proof)
+        print(proof)
         node_label = [0] * (nfact + nrule + 1)
         edge_label = np.zeros((nfact+nrule+1, nfact+nrule+1), dtype=int)
+
         if "FAIL" in proof:
             nodes, edges = get_proof_graph_with_fail(proof)
         else:
             nodes, edges = get_proof_graph(proof)
-        #print(nodes)
-        #print(edges)
+        print(nodes)
+        print(edges)
 
         component_index_map = {}
         for (i, index) in enumerate(sentence_scramble):
@@ -203,17 +256,19 @@ class RRProcessor(DataProcessor):
         edge_label[np.tril_indices((nfact+nrule+1), 0)] = -100
 
         # Set edges to irrelevant nodes to -100
+        '''
         for start_index in range(len(node_label)):
             for end_index in range(len(node_label)):
                 if start_index < end_index and (node_label[start_index] == 0 or node_label[end_index] == 0):
                     edge_label[start_index][end_index] = -100
+        '''
 
         return node_label, list(edge_label.flatten())
 
     def _create_examples(self, records, meta_records):
         examples = []
         for (i, (record, meta_record)) in enumerate(zip(records, meta_records)):
-            #print(i)
+            print(i)
             assert record["id"] == meta_record["id"]
             context = record["context"]
             #if "not" in context:
@@ -221,7 +276,7 @@ class RRProcessor(DataProcessor):
             sentence_scramble = record["meta"]["sentenceScramble"]
             for (j, question) in enumerate(record["questions"]):
                 # Uncomment to train/evaluate at a certain depth
-                #if question["meta"]["QDep"] != 5:
+                #if question["meta"]["QDep"] != 0:
                 #    continue
                 id = question["id"]
                 label = question["label"]
@@ -363,6 +418,103 @@ def convert_examples_to_features(examples,
                           input_mask=input_mask,
                           segment_ids=segment_ids,
                           label_id=label_id))
+    return features
+
+def convert_examples_to_features_RR_QA(examples,
+                                 label_list,
+                                 max_seq_length,
+                                 tokenizer,
+                                 output_mode,
+                                 cls_token_at_end=False,
+                                 pad_on_left=False,
+                                 cls_token='[CLS]',
+                                 sep_token='[SEP]',
+                                 sep_token_extra=False,
+                                 pad_token=0,
+                                 sequence_a_segment_id=0,
+                                 sequence_b_segment_id=1,
+                                 cls_token_segment_id=1,
+                                 pad_token_segment_id=0,
+                                 mask_padding_with_zero=True):
+
+    label_map = {label : i for i, label in enumerate(label_list)}
+
+    features = []
+    max_size = 0
+    for (ex_index, example) in enumerate(examples):
+        if ex_index % 10000 == 0:
+            logger.info("Writing example %d of %d" % (ex_index, len(examples)))
+
+        sentences = sent_tokenize(example.context)
+        context_tokens = tokenizer.tokenize(example.context)
+        '''
+        for sentence in sentences:
+            sentence_tokens = tokenizer.tokenize(sentence)
+            context_tokens.extend(sentence_tokens)
+        '''
+        max_size = max(max_size, len(context_tokens))
+
+        question_tokens = tokenizer.tokenize(example.question)
+
+        special_tokens_count = 3 if sep_token_extra else 2
+        _truncate_seq_pair(context_tokens, question_tokens, max_seq_length - special_tokens_count - 1)
+
+        tokens = context_tokens + [sep_token]
+        if sep_token_extra:
+            # roberta uses an extra separator b/w pairs of sentences
+            tokens += [sep_token]
+        segment_ids = [sequence_a_segment_id] * len(tokens)
+
+        tokens += question_tokens + [sep_token]
+        segment_ids += [sequence_b_segment_id] * (len(question_tokens) + 1)
+
+        if cls_token_at_end:
+            tokens = tokens + [cls_token]
+            segment_ids = segment_ids + [cls_token_segment_id]
+        else:
+            tokens = [cls_token] + tokens
+            segment_ids = [cls_token_segment_id] + segment_ids
+
+        input_ids = tokenizer.convert_tokens_to_ids(tokens)
+
+        # The mask has 1 for real tokens and 0 for padding tokens. Only real
+        # tokens are attended to.
+        input_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
+
+        # Zero-pad up to the sequence length.
+        padding_length = max_seq_length - len(input_ids)
+        if pad_on_left:
+            input_ids = ([pad_token] * padding_length) + input_ids
+            input_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + input_mask
+            segment_ids = ([pad_token_segment_id] * padding_length) + segment_ids
+        else:
+            input_ids = input_ids + ([pad_token] * padding_length)
+            input_mask = input_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
+            segment_ids = segment_ids + ([pad_token_segment_id] * padding_length)
+
+        assert len(input_ids) == max_seq_length
+        assert len(input_mask) == max_seq_length
+        assert len(segment_ids) == max_seq_length
+
+        label_id = label_map[example.label]
+
+        if ex_index < 5:
+            logger.info("*** Example ***")
+            logger.info("id: %s" % (example.id))
+            logger.info("tokens: %s" % " ".join(
+                [str(x) for x in tokens]))
+            logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
+            logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
+            logger.info("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
+            logger.info("label: %s (id = %d)" % (example.label, label_id))
+
+        features.append(
+            RRFeaturesQA(id=id,
+                       input_ids=input_ids,
+                       input_mask=input_mask,
+                       segment_ids=segment_ids,
+                       label_id=label_id))
+
     return features
 
 def convert_examples_to_features_RR(examples,
@@ -524,7 +676,7 @@ def simple_accuracy(preds, labels):
 
 def compute_metrics(task_name, preds, labels):
     assert len(preds) == len(labels)
-    if task_name == "rr":
+    if task_name == "rr" or task_name == "rr_qa":
         return {"acc": simple_accuracy(preds, labels)}
     else:
         raise KeyError(task_name)
@@ -594,15 +746,63 @@ def compute_graph_metrics(task_name, node_preds, out_node_label_ids, edge_preds,
             "edge_acc": correct_edge/len(edge_preds),
             "graph_acc": correct_edge/len(edge_preds)}
 
+def compute_graph_metrics_node_based(task_name, node_preds, out_node_label_ids, edge_preds, out_edge_label_ids):
+    assert len(node_preds) == len(out_node_label_ids)
+    assert len(edge_preds) == len(out_edge_label_ids)
+    assert len(node_preds) == len(edge_preds)
+    correct_node, correct_edge, correct_graph = 0, 0, 0
+    for i in range(len(out_node_label_ids)):
+        node_pred_ids = []
+        count_valid_nodes = 0
+        for j in range(len(out_node_label_ids[i])):
+            if out_node_label_ids[i][j] == -100: # Ignore index, so copy it
+                node_preds[i][j] = -100
+                continue
+            else:
+                count_valid_nodes += 1
+                if node_preds[i][j] == 1:
+                    node_pred_ids.append(j)
+
+        invalid_edges_start = count_valid_nodes*count_valid_nodes
+        for j in range(len(out_edge_label_ids[i])):
+            row = int(j/count_valid_nodes)
+            col = j % count_valid_nodes
+            # Invalid cases
+            if j >= invalid_edges_start:
+                edge_preds[i][j] = -100
+            # Lower triangle
+            elif row >= col:
+                edge_preds[i][j] = -100
+            # Edges to nodes not part of node prediction, so can be ignored
+            elif row not in node_pred_ids or col not in node_pred_ids:
+                edge_preds[i][j] = out_edge_label_ids[i][j]
+
+        # If they match exactly, then it's fully correct
+        if np.array_equal(out_node_label_ids[i], node_preds[i]):
+            correct_node += 1
+
+        if np.array_equal(out_edge_label_ids[i], edge_preds[i]):
+            correct_edge += 1
+
+        if np.array_equal(out_node_label_ids[i], node_preds[i]) and np.array_equal(out_edge_label_ids[i], edge_preds[i]):
+            correct_graph += 1
+
+    return {"node_acc": correct_node/len(node_preds),
+            "edge_acc": correct_edge/len(edge_preds),
+            "graph_acc": correct_edge/len(edge_preds)}
+
 
 processors = {
-    "rr": RRProcessor
+    "rr": RRProcessor,
+    "rr_qa": RRProcessorQA
 }
 
 output_modes = {
-    "rr": "classification"
+    "rr": "classification",
+    "rr_qa": "classification"
 }
 
 GLUE_TASKS_NUM_LABELS = {
-    "rr": 2
+    "rr": 2,
+    "rr_qa": 2
 }
