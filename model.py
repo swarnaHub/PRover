@@ -5,6 +5,35 @@ from torch.nn import CrossEntropyLoss, BCEWithLogitsLoss
 import torch
 from torch.nn.utils.rnn import pad_sequence
 
+class RobertaForRR(BertPreTrainedModel):
+    config_class = RobertaConfig
+    pretrained_model_archive_map = ROBERTA_PRETRAINED_MODEL_ARCHIVE_MAP
+    base_model_prefix = "roberta"
+
+    def __init__(self, config):
+        super(RobertaForRR, self).__init__(config)
+
+        self.num_labels = config.num_labels
+        self.roberta = RobertaModel(config)
+        self.classifier = RobertaClassificationHead(config)
+
+        self.apply(self.init_weights)
+
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, labels=None, position_ids=None,
+                head_mask=None):
+        outputs = self.roberta(input_ids, position_ids=position_ids, token_type_ids=token_type_ids,
+                               attention_mask=attention_mask, head_mask=head_mask)
+        sequence_output = outputs[0]
+        logits = self.classifier(sequence_output)
+
+        outputs = (logits,) + outputs[2:]
+        if labels is not None:
+            loss_fct = CrossEntropyLoss()
+            qa_loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            outputs = (qa_loss,) + outputs
+
+        return outputs  # qa_loss, logits, (hidden_states), (attentions)
+
 class RobertaForRRWithNodeLoss(BertPreTrainedModel):
     config_class = RobertaConfig
     pretrained_model_archive_map = ROBERTA_PRETRAINED_MODEL_ARCHIVE_MAP
@@ -192,10 +221,11 @@ class RobertaForRRWithEdgeLoss(BertPreTrainedModel):
             # Add the NAF output at the end
             sample_node_embedding = torch.cat((sample_node_embedding, naf_output[batch_index].unsqueeze(0)), dim=0)
 
-            sample_edge_embedding = torch.cat(
-                (sample_node_embedding.unsqueeze(0).repeat(len(sample_node_embedding), 1, 1),
-                 sample_node_embedding.unsqueeze(1).repeat(1, len(sample_node_embedding), 1)),
-                dim=2)
+            repeat1 = sample_node_embedding.unsqueeze(0).repeat(len(sample_node_embedding), 1, 1)
+            repeat2 = sample_node_embedding.unsqueeze(1).repeat(1, len(sample_node_embedding), 1)
+            #sample_edge_embedding = torch.cat((repeat1, repeat2, abs(repeat1-repeat2)), dim=2)
+            sample_edge_embedding = torch.cat((repeat1, repeat2), dim=2)
+
             sample_edge_embedding = sample_edge_embedding.view(-1, sample_edge_embedding.shape[-1])
 
             # Append 0s at the end (these will be ignored for loss)
