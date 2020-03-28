@@ -154,9 +154,14 @@ class RRProcessorQA(DataProcessor):
             self._read_jsonl(os.path.join(data_dir, "meta-train.jsonl")))
 
     def get_dev_examples(self, data_dir):
+        '''
         return self._create_examples(
             self._read_jsonl(os.path.join(data_dir, "test.jsonl")),
             self._read_jsonl(os.path.join(data_dir, "meta-test.jsonl")))
+        '''
+        return self._create_examples_leave_one_out(
+            self._read_jsonl(os.path.join(data_dir, "leave-one-out-critical.jsonl"))
+        )
 
     def get_test_examples(self, data_dir):
         return self._create_examples(
@@ -175,11 +180,22 @@ class RRProcessorQA(DataProcessor):
             for (j, question) in enumerate(record["questions"]):
                 id = question["id"]
                 label = question["label"]
+                meta_data = meta_record["questions"]["Q" + str(j + 1)]
+                proofs = meta_data["proofs"]
+                if "CWA" in proofs:
+                    continue
                 #if question["meta"]["QDep"] != 3:
                 #    continue
                 question = question["text"]
 
                 examples.append(RRInputExampleQA(id, context, question, label))
+
+        return examples
+
+    def _create_examples_leave_one_out(self, records):
+        examples = []
+        for record in records:
+            examples.append(RRInputExampleQA(record["id"], record["context"], record["question"], record["label"]))
 
         return examples
 
@@ -205,7 +221,7 @@ class RRProcessor(DataProcessor):
 
     def _get_node_edge_label(self, proofs, sentence_scramble, nfact, nrule):
         proof = proofs.split("OR")[0]
-        print(proof)
+        #print(proof)
         node_label = [0] * (nfact + nrule + 1)
         edge_label = np.zeros((nfact+nrule+1, nfact+nrule+1), dtype=int)
 
@@ -213,8 +229,8 @@ class RRProcessor(DataProcessor):
             nodes, edges = get_proof_graph_with_fail(proof)
         else:
             nodes, edges = get_proof_graph(proof)
-        print(nodes)
-        print(edges)
+        #print(nodes)
+        #print(edges)
 
         component_index_map = {}
         for (i, index) in enumerate(sentence_scramble):
@@ -271,26 +287,27 @@ class RRProcessor(DataProcessor):
             print(i)
             assert record["id"] == meta_record["id"]
             context = record["context"]
-            #if "not" in context:
-            #    continue
-            sentence_scramble = record["meta"]["sentenceScramble"]
-            for (j, question) in enumerate(record["questions"]):
-                # Uncomment to train/evaluate at a certain depth
-                #if question["meta"]["QDep"] != 0:
-                #    continue
-                id = question["id"]
-                label = question["label"]
-                question = question["text"]
-                meta_data = meta_record["questions"]["Q"+str(j+1)]
+            if "Noneg" in record["id"]:
+                sentence_scramble = record["meta"]["sentenceScramble"]
+                for (j, question) in enumerate(record["questions"]):
+                    # Uncomment to train/evaluate at a certain depth
+                    #if question["meta"]["QDep"] != 0:
+                    #    continue
+                    id = question["id"]
+                    label = question["label"]
+                    question = question["text"]
+                    meta_data = meta_record["questions"]["Q"+str(j+1)]
 
-                assert (question == meta_data["question"])
+                    assert (question == meta_data["question"])
 
-                proofs = meta_data["proofs"]
-                nfact = meta_record["NFact"]
-                nrule = meta_record["NRule"]
-                node_label, edge_label = self._get_node_edge_label(proofs, sentence_scramble, nfact, nrule)
+                    proofs = meta_data["proofs"]
+                    if "CWA" in proofs:
+                        continue
+                    nfact = meta_record["NFact"]
+                    nrule = meta_record["NRule"]
+                    node_label, edge_label = self._get_node_edge_label(proofs, sentence_scramble, nfact, nrule)
 
-                examples.append(RRInputExample(id, context, question, node_label, edge_label, label))
+                    examples.append(RRInputExample(id, context, question, node_label, edge_label, label))
 
         return examples
 
