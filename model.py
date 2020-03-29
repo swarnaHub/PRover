@@ -175,11 +175,11 @@ class RobertaForRRWithEdgeLoss(BertPreTrainedModel):
         super(RobertaForRRWithEdgeLoss, self).__init__(config)
 
         self.num_labels = config.num_labels
-        self.num_labels_edge = 3
+        self.num_labels_edge = 2
         self.roberta = RobertaModel(config)
         self.classifier = RobertaClassificationHead(config)
         self.classifier_node = torch.nn.Linear(config.hidden_size, self.num_labels)
-        self.classifier_edge = torch.nn.Linear(2*config.hidden_size, self.num_labels_edge)
+        self.classifier_edge = torch.nn.Linear(3*config.hidden_size, self.num_labels_edge)
 
         self.apply(self.init_weights)
 
@@ -199,7 +199,7 @@ class RobertaForRRWithEdgeLoss(BertPreTrainedModel):
         embedding_dim = sequence_output.shape[2]
 
         batch_node_embedding = torch.zeros((batch_size, max_node_length, embedding_dim)).to("cuda")
-        batch_edge_embedding = torch.zeros((batch_size, max_edge_length, 2*embedding_dim)).to("cuda")
+        batch_edge_embedding = torch.zeros((batch_size, max_edge_length, 3*embedding_dim)).to("cuda")
 
         for batch_index in range(batch_size):
             prev_index = 1
@@ -223,8 +223,8 @@ class RobertaForRRWithEdgeLoss(BertPreTrainedModel):
 
             repeat1 = sample_node_embedding.unsqueeze(0).repeat(len(sample_node_embedding), 1, 1)
             repeat2 = sample_node_embedding.unsqueeze(1).repeat(1, len(sample_node_embedding), 1)
-            #sample_edge_embedding = torch.cat((repeat1, repeat2, abs(repeat1-repeat2)), dim=2)
-            sample_edge_embedding = torch.cat((repeat1, repeat2), dim=2)
+            sample_edge_embedding = torch.cat((repeat1, repeat2, (repeat1-repeat2)), dim=2)
+            #sample_edge_embedding = torch.cat((repeat1, repeat2), dim=2)
 
             sample_edge_embedding = sample_edge_embedding.view(-1, sample_edge_embedding.shape[-1])
 
@@ -232,7 +232,7 @@ class RobertaForRRWithEdgeLoss(BertPreTrainedModel):
             sample_node_embedding = torch.cat((sample_node_embedding,
                                                torch.zeros((max_node_length-count-1, embedding_dim)).to("cuda")), dim=0)
             sample_edge_embedding = torch.cat((sample_edge_embedding,
-                                               torch.zeros((max_edge_length-len(sample_edge_embedding), 2*embedding_dim)).to("cuda")), dim=0)
+                                               torch.zeros((max_edge_length-len(sample_edge_embedding), 3*embedding_dim)).to("cuda")), dim=0)
 
             batch_node_embedding[batch_index, :, :] = sample_node_embedding
             batch_edge_embedding[batch_index, :, :] = sample_edge_embedding

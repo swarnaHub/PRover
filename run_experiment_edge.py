@@ -52,7 +52,7 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
 from pytorch_transformers import AdamW, WarmupLinearSchedule
 
 from model import RobertaForRRWithEdgeLoss, RobertaForMultipleChoice
-from utils import (compute_metrics, compute_sequence_metrics, compute_graph_metrics_node_based, convert_examples_to_features,
+from utils import (compute_metrics, compute_sequence_metrics, compute_graph_metrics, convert_examples_to_features,
                    output_modes, processors,
                    convert_examples_to_features_RR)
 
@@ -306,7 +306,7 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
 
         if not eval_split == "test":
             result = compute_metrics(eval_task, preds, out_label_ids)
-            result_graph = compute_graph_metrics_node_based(eval_task, node_preds, out_node_label_ids, edge_preds, out_edge_label_ids)
+            result_graph = compute_graph_metrics(eval_task, node_preds, out_node_label_ids, edge_preds, out_edge_label_ids)
             result_split = {}
             for k, v in result.items():
                 result_split[k + "_{}".format(eval_split)] = v

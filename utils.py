@@ -160,7 +160,7 @@ class RRProcessorQA(DataProcessor):
             self._read_jsonl(os.path.join(data_dir, "meta-test.jsonl")))
         '''
         return self._create_examples_leave_one_out(
-            self._read_jsonl(os.path.join(data_dir, "leave-one-out-critical.jsonl"))
+            self._read_jsonl(os.path.join(data_dir, "leave-one-out.jsonl"))
         )
 
     def get_test_examples(self, data_dir):
@@ -281,10 +281,58 @@ class RRProcessor(DataProcessor):
 
         return node_label, list(edge_label.flatten())
 
+    def _get_node_edge_label_with_cycle(self, context, question, proofs, sentence_scramble, nfact, nrule):
+        proof = proofs.split("OR")[0]
+        #print(proof)
+        node_label = [0] * (nfact + nrule + 1)
+        edge_label = np.zeros((nfact+nrule+1, nfact+nrule+1), dtype=int)
+
+        if "FAIL" in proof:
+            nodes, edges = get_proof_graph_with_fail(proof)
+        else:
+            nodes, edges = get_proof_graph(proof)
+        #print(nodes)
+        #print(edges)
+
+        component_index_map = {}
+        for (i, index) in enumerate(sentence_scramble):
+            if index <= nfact:
+                component = "triple" + str(index)
+            else:
+                component = "rule" + str(index-nfact)
+            component_index_map[component] = i
+
+        for node in nodes:
+            if node != "NAF":
+                index = component_index_map[node]
+            else:
+                index = nfact+nrule
+            node_label[index] = 1
+
+        both_edge = False
+        edges = list(set(edges))
+        for edge in edges:
+            if edge[0] != "NAF":
+                start_index = component_index_map[edge[0]]
+            else:
+                start_index = nfact+nrule
+            if edge[1] != "NAF":
+                end_index = component_index_map[edge[1]]
+            else:
+                end_index = nfact+nrule
+
+            edge_label[start_index][end_index] = 1
+
+        # Ignore diagonal
+        for i in range(len(edge_label)):
+            edge_label[i][i] = -100
+
+        return node_label, list(edge_label.flatten())
+
     def _create_examples(self, records, meta_records):
         examples = []
         for (i, (record, meta_record)) in enumerate(zip(records, meta_records)):
-            print(i)
+            #print(i)
             assert record["id"] == meta_record["id"]
             context = record["context"]
             sentence_scramble = record["meta"]["sentenceScramble"]
@@ -302,7 +350,7 @@ class RRProcessor(DataProcessor):
                 proofs = meta_data["proofs"]
                 nfact = meta_record["NFact"]
                 nrule = meta_record["NRule"]
-                node_label, edge_label = self._get_node_edge_label(proofs, sentence_scramble, nfact, nrule)
+                node_label, edge_label = self._get_node_edge_label_with_cycle(context, question, proofs, sentence_scramble, nfact, nrule)
 
                 examples.append(RRInputExample(id, context, question, node_label, edge_label, label))
 
