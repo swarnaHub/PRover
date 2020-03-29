@@ -287,27 +287,24 @@ class RRProcessor(DataProcessor):
             print(i)
             assert record["id"] == meta_record["id"]
             context = record["context"]
-            if "Noneg" in record["id"]:
-                sentence_scramble = record["meta"]["sentenceScramble"]
-                for (j, question) in enumerate(record["questions"]):
-                    # Uncomment to train/evaluate at a certain depth
-                    #if question["meta"]["QDep"] != 0:
-                    #    continue
-                    id = question["id"]
-                    label = question["label"]
-                    question = question["text"]
-                    meta_data = meta_record["questions"]["Q"+str(j+1)]
+            sentence_scramble = record["meta"]["sentenceScramble"]
+            for (j, question) in enumerate(record["questions"]):
+                # Uncomment to train/evaluate at a certain depth
+                #if question["meta"]["QDep"] != 0:
+                #    continue
+                id = question["id"]
+                label = question["label"]
+                question = question["text"]
+                meta_data = meta_record["questions"]["Q"+str(j+1)]
 
-                    assert (question == meta_data["question"])
+                assert (question == meta_data["question"])
 
-                    proofs = meta_data["proofs"]
-                    if "CWA" in proofs:
-                        continue
-                    nfact = meta_record["NFact"]
-                    nrule = meta_record["NRule"]
-                    node_label, edge_label = self._get_node_edge_label(proofs, sentence_scramble, nfact, nrule)
+                proofs = meta_data["proofs"]
+                nfact = meta_record["NFact"]
+                nrule = meta_record["NRule"]
+                node_label, edge_label = self._get_node_edge_label(proofs, sentence_scramble, nfact, nrule)
 
-                    examples.append(RRInputExample(id, context, question, node_label, edge_label, label))
+                examples.append(RRInputExample(id, context, question, node_label, edge_label, label))
 
         return examples
 

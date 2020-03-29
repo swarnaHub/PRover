@@ -1,6 +1,6 @@
 #x = "((((((triple9) -> rule7) triple6) -> rule3)) -> rule4)"
-#x = "[(((((triple11 ((((triple11 ((triple11) -> rule2)) -> rule1)) -> rule4)) -> rule3) ((((triple11 ((triple11) -> rule2)) -> rule1)) -> rule4)) -> rule5))]"
-x = "[(((((((NAF) -> rule6)) -> rule4) NAF) -> rule7))]"
+x = "[(((((triple11 ((((triple11 ((triple11) -> rule2)) -> rule1)) -> rule4)) -> rule3) ((((triple11 ((triple11) -> rule2)) -> rule1)) -> rule4)) -> rule5))]"
+#x = "[(((((((NAF) -> rule6)) -> rule4) NAF) -> rule7))]"
 
 class Node:
     def __init__(self, head, elements):
