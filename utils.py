@@ -281,7 +281,7 @@ class RRProcessor(DataProcessor):
 
         return node_label, list(edge_label.flatten())
 
-    def _get_node_edge_label_with_cycle(self, context, question, proofs, sentence_scramble, nfact, nrule):
+    def _get_node_edge_label_with_cycle(self, proofs, sentence_scramble, nfact, nrule):
         proof = proofs.split("OR")[0]
         #print(proof)
         node_label = [0] * (nfact + nrule + 1)
@@ -309,7 +309,6 @@ class RRProcessor(DataProcessor):
                 index = nfact+nrule
             node_label[index] = 1
 
-        both_edge = False
         edges = list(set(edges))
         for edge in edges:
             if edge[0] != "NAF":
@@ -338,7 +337,7 @@ class RRProcessor(DataProcessor):
             sentence_scramble = record["meta"]["sentenceScramble"]
             for (j, question) in enumerate(record["questions"]):
                 # Uncomment to train/evaluate at a certain depth
-                #if question["meta"]["QDep"] != 0:
+                #if question["meta"]["QDep"] != 5:
                 #    continue
                 id = question["id"]
                 label = question["label"]
@@ -350,7 +349,7 @@ class RRProcessor(DataProcessor):
                 proofs = meta_data["proofs"]
                 nfact = meta_record["NFact"]
                 nrule = meta_record["NRule"]
-                node_label, edge_label = self._get_node_edge_label_with_cycle(context, question, proofs, sentence_scramble, nfact, nrule)
+                node_label, edge_label = self._get_node_edge_label_with_cycle(proofs, sentence_scramble, nfact, nrule)
 
                 examples.append(RRInputExample(id, context, question, node_label, edge_label, label))
 
@@ -806,7 +805,7 @@ def compute_graph_metrics(task_name, node_preds, out_node_label_ids, edge_preds,
 
     return {"node_acc": correct_node/len(node_preds),
             "edge_acc": correct_edge/len(edge_preds),
-            "graph_acc": correct_edge/len(edge_preds)}
+            "graph_acc": correct_graph/len(edge_preds)}
 
 def compute_graph_metrics_node_based(task_name, node_preds, out_node_label_ids, edge_preds, out_edge_label_ids):
     assert len(node_preds) == len(out_node_label_ids)

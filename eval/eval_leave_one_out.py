@@ -1,8 +1,8 @@
 import json
 
 def get_noneg_data():
-    test = open("data/depth-5/test.jsonl", "r", encoding="utf-8-sig")
-    meta_test = open("data/depth-5/meta-test.jsonl", "r", encoding="utf-8-sig")
+    test = open("../data/depth-5/test.jsonl", "r", encoding="utf-8-sig")
+    meta_test = open("../data/depth-5/meta-test.jsonl", "r", encoding="utf-8-sig")
     question_label_map = {}
 
     for (line, meta_line) in zip(test, meta_test):
@@ -25,8 +25,8 @@ def get_noneg_data():
     return question_label_map
 
 def get_leave_one_out_preds():
-    leave_one_out_data = open("data/depth-5/leave-one-out.jsonl", "r", encoding="utf-8-sig")
-    preds = open("output/best_model/predictions_dev.lst", "r", encoding="utf-8-sig")
+    leave_one_out_data = open("../data/depth-5/leave-one-out.jsonl", "r", encoding="utf-8-sig")
+    preds = open("../output/best_model/predictions_dev.lst", "r", encoding="utf-8-sig")
 
     question_pred_map = {}
     for leave_one_out_line, pred_line in zip(leave_one_out_data, preds):

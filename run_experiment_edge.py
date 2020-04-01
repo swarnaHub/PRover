@@ -328,6 +328,23 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
             for pred in preds:
                 writer.write("{}\n".format(processor.get_labels()[pred]))
 
+        # prediction nodes
+        output_node_pred_file = os.path.join(eval_output_dir, "prediction_nodes_{}.lst".format(eval_split))
+        with open(output_node_pred_file, "w") as writer:
+            logger.info("***** Write predictions {} on {} *****".format(prefix, eval_split))
+            for node_gold, node_pred in zip(out_node_label_ids, node_preds):
+                node_gold = node_gold[np.where(node_gold != -100)[0]]
+                node_pred = node_pred[:len(node_gold)]
+                writer.write(str(list(node_pred)) + "\n")
+
+        # prediction edges
+        output_edge_pred_file = os.path.join(eval_output_dir, "prediction_edges_{}.lst".format(eval_split))
+        with open(output_edge_pred_file, "w") as writer:
+            logger.info("***** Write predictions {} on {} *****".format(prefix, eval_split))
+            for edge_pred in edge_preds:
+                writer.write(str(list(edge_pred)) + "\n")
+
+        '''
         # prediction proofs
         output_proof_pred_file = os.path.join(eval_output_dir, "prediction_graphs_{}.lst".format(eval_split))
         with open(output_proof_pred_file, "w") as writer:
@@ -384,11 +401,7 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
 
 
                 writer.write("\n\n")
-
-        if os.path.exists("/output/"):
-            with open("/output/metrics.json", "w") as f:
-                f.write(json.dumps(results))
-            f.close()
+        '''
 
     return results
 

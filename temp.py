@@ -1,94 +1,37 @@
-#x = "((((((triple9) -> rule7) triple6) -> rule3)) -> rule4)"
-x = "[(((((triple11 ((((triple11 ((triple11) -> rule2)) -> rule1)) -> rule4)) -> rule3) ((((triple11 ((triple11) -> rule2)) -> rule1)) -> rule4)) -> rule5))]"
-#x = "[(((((((NAF) -> rule6)) -> rule4) NAF) -> rule7))]"
+from pulp import *
 
-class Node:
-    def __init__(self, head, elements):
-        self.head = head
-        self.elements = elements
+if __name__ == '__main__':
+    prob = LpProblem("NodeEdgeConsistency", LpMaximize)
+    nodes = []
+    for i in range(4):
+        nodes.append(LpVariable("Node_" + str(i), 0, 1, LpInteger))
 
-    def __str__(self):
-        return str(self.head)
+    edges = []
+    for i in range(16):
+        edges.append(LpVariable("Edge_" + str(i), 0, 1, LpInteger))
 
-def get_proof_graph(proof_str):
-    stack = []
-    last_open = 0
-    pop_list = []
-    all_edges = []
-    all_nodes = []
+    node_logits = [0.1, 0.2, 0.3, 0.4]
+    edge_logits = [0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3, 0.4]
 
-    proof_str = proof_str.replace("(", " ( ")
-    proof_str = proof_str.replace(")", " ) ")
-    proof_str = proof_str.split()
-
-    should_join = False
-    for i in range(len(proof_str)):
-        _s = proof_str[i]
-        x = _s.strip()
-        if len(x) == 0:
-            continue
-
-        if x == "(":
-            stack.append(x)
-            last_open = len(stack) - 1
-        elif x == ")":
-            for j in range(last_open + 1, len(stack)):
-                if isinstance(stack[j], Node):
-                    pop_list.append(stack[j])
-
-            stack = stack[:last_open]
-            for j in range((len(stack))):
-                if stack[j] == "(":
-                    last_open = j
-            for p in pop_list:
-                stack.append(p)
-            pop_list = []
-        elif x == '[' or x == ']':
-            pass
-        elif x == "->":
-            should_join = True
+    opt_prob = None
+    for i in range(4):
+        if opt_prob == None:
+            opt_prob = node_logits[i] * nodes[i]
         else:
-            # terminal
-            if x not in all_nodes:
-                all_nodes.append(x)
-            for j in range(last_open + 1, len(stack)):
-                if isinstance(stack[j], Node):
-                    pop_list.append(stack[j])
+            opt_prob += node_logits[i] * nodes[i]
 
-            stack = stack[:last_open + 1]
+    for i in range(16):
+        opt_prob += edge_logits[i] * edges[i]
 
-            if len(pop_list) == 0 or not should_join:
-                stack.append(Node(x, [x]))
-            else:
-                all_elems = []
-                # A new terminal node can get appended to a maximum of two nodes
-                assert(len(pop_list)) <= 2
+    prob += opt_prob, "Maximum score"
 
-                for p in pop_list:
-                    all_edges.append((p.head, x))
-                    for y in p.elements:
-                        all_elems.append(y)
-                pop_list = []
+    for i in range(16):
+        row = int(i/4)
+        col = i%4
+        if row == col:
+            prob += edges[i] == 0, "Self loop"
+        else:
+            prob += nodes[row]*nodes[col] - edges[i] >= 0, "Edge possible"
 
-                stack.append(Node(x, all_elems))
-
-            should_join = False
-
-    return all_nodes, all_edges
-
-def get_proof_graph_with_fail(proof_str):
-    proof_str = proof_str[:-2].split("=")[1].strip()[1:-1]
-    nodes = proof_str.split(" <- ")
-
-    all_nodes = []
-    all_edges = []
-    for i in range(len(nodes)-1):
-        all_nodes.append(nodes[i])
-        if nodes[i+1] != "FAIL":
-            all_edges.append((nodes[i+1], nodes[i]))
-
-    return all_nodes, all_edges
-
-
-all_nodes, all_edges = get_proof_graph(x)
-print(all_edges)
+    prob.writeLP("output/NodeEdgeConsistency.lp")
+    prob.solve()
