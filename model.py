@@ -3,6 +3,7 @@ from pytorch_transformers import BertPreTrainedModel, RobertaConfig, \
 from pytorch_transformers.modeling_roberta import RobertaClassificationHead
 from torch.nn import CrossEntropyLoss, BCEWithLogitsLoss
 import torch
+import torch.nn as nn
 from torch.nn.utils.rnn import pad_sequence
 
 class RobertaForRR(BertPreTrainedModel):
@@ -165,6 +166,41 @@ class RobertaForRRWithNodeLossEfficient(BertPreTrainedModel):
 
         return outputs  # (total_loss), qa_loss, node_loss, logits, node_logits, (hidden_states), (attentions)
 
+class NodeClassificationHead(nn.Module):
+    """Head for sentence-level classification tasks."""
+
+    def __init__(self, config):
+        super(NodeClassificationHead, self).__init__()
+        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.out_proj = nn.Linear(config.hidden_size, config.num_labels)
+
+    def forward(self, features, **kwargs):
+        x = features[:, 0, :]  # take <s> token (equiv. to [CLS])
+        x = self.dropout(x)
+        x = self.dense(x)
+        x = torch.tanh(x)
+        x = self.dropout(x)
+        x = self.out_proj(x)
+        return x
+
+class EdgeClassificationHead(nn.Module):
+    """Head for sentence-level classification tasks."""
+
+    def __init__(self, config):
+        super(EdgeClassificationHead, self).__init__()
+        self.dense = nn.Linear(3*config.hidden_size, config.hidden_size)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.out_proj = nn.Linear(config.hidden_size, config.num_labels)
+
+    def forward(self, features, **kwargs):
+        x = features[:, 0, :]  # take <s> token (equiv. to [CLS])
+        x = self.dropout(x)
+        x = self.dense(x)
+        x = torch.tanh(x)
+        x = self.dropout(x)
+        x = self.out_proj(x)
+        return
 
 class RobertaForRRWithEdgeLoss(BertPreTrainedModel):
     config_class = RobertaConfig
@@ -178,8 +214,10 @@ class RobertaForRRWithEdgeLoss(BertPreTrainedModel):
         self.num_labels_edge = 2
         self.roberta = RobertaModel(config)
         self.classifier = RobertaClassificationHead(config)
-        self.classifier_node = torch.nn.Linear(config.hidden_size, self.num_labels)
-        self.classifier_edge = torch.nn.Linear(3*config.hidden_size, self.num_labels_edge)
+        #self.classifier_node = torch.nn.Linear(config.hidden_size, self.num_labels)
+        #self.classifier_edge = torch.nn.Linear(3*config.hidden_size, self.num_labels_edge)
+        self.classifier_node = NodeClassificationHead(config)
+        self.classifier_edge = EdgeClassificationHead(config)
 
         self.apply(self.init_weights)
 
