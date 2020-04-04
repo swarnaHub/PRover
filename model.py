@@ -198,7 +198,7 @@ class EdgeClassificationHead(nn.Module):
         x = torch.tanh(x)
         x = self.dropout(x)
         x = self.out_proj(x)
-        return
+        return x
 
 class RobertaForRRWithEdgeLoss(BertPreTrainedModel):
     config_class = RobertaConfig
