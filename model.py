@@ -213,6 +213,7 @@ class RobertaForRRWithEdgeLoss(BertPreTrainedModel):
         self.num_labels = config.num_labels
         self.num_labels_edge = 2
         self.roberta = RobertaModel(config)
+        self.naf_layer = nn.Linear(config.hidden_size, config.hidden_size)
         self.classifier = RobertaClassificationHead(config)
         #self.classifier_node = torch.nn.Linear(config.hidden_size, self.num_labels)
         #self.classifier_edge = torch.nn.Linear(3*config.hidden_size, self.num_labels_edge)
@@ -228,7 +229,8 @@ class RobertaForRRWithEdgeLoss(BertPreTrainedModel):
 
         sequence_output = outputs[0]
         cls_output = sequence_output[:, 0, :]
-        naf_output = -cls_output
+        #naf_output = -cls_output
+        naf_output = self.naf_layer(cls_output)
         logits = self.classifier(sequence_output)
 
         max_node_length = node_label.shape[1]
