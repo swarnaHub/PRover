@@ -8,7 +8,6 @@ from proof_utils import get_proof_graph, get_proof_graph_with_fail
 def get_node_edge_label(proofs, sentence_scramble, nfact, nrule):
     all_node_labels, all_edge_labels = [], []
     for proof in proofs.split("OR"):
-        # print(proof)
         node_label = [0] * (nfact + nrule + 1)
         edge_label = np.zeros((nfact + nrule + 1, nfact + nrule + 1), dtype=int)
 
@@ -16,8 +15,6 @@ def get_node_edge_label(proofs, sentence_scramble, nfact, nrule):
             nodes, edges = get_proof_graph_with_fail(proof)
         else:
             nodes, edges = get_proof_graph(proof)
-        # print(nodes)
-        # print(edges)
 
         component_index_map = {}
         for (i, index) in enumerate(sentence_scramble):
@@ -45,13 +42,11 @@ def get_node_edge_label(proofs, sentence_scramble, nfact, nrule):
             else:
                 end_index = nfact + nrule
 
-            if start_index < end_index:
-                edge_label[start_index][end_index] = 1
-            else:
-                edge_label[end_index][start_index] = 2
+            edge_label[start_index][end_index] = 1
 
-        # Set lower triangle labels to -100
-        edge_label[np.tril_indices((nfact + nrule + 1), 0)] = -100
+        # Ignore diagonal
+        for i in range(len(edge_label)):
+            edge_label[i][i] = -100
 
         all_node_labels.append(node_label)
         all_edge_labels.append(list(edge_label.flatten()))
