@@ -176,8 +176,7 @@ class NodeClassificationHead(nn.Module):
         self.out_proj = nn.Linear(config.hidden_size, config.num_labels)
 
     def forward(self, features, **kwargs):
-        x = features[:, 0, :]  # take <s> token (equiv. to [CLS])
-        x = self.dropout(x)
+        x = self.dropout(features)
         x = self.dense(x)
         x = torch.tanh(x)
         x = self.dropout(x)
@@ -194,8 +193,7 @@ class EdgeClassificationHead(nn.Module):
         self.out_proj = nn.Linear(config.hidden_size, config.num_labels)
 
     def forward(self, features, **kwargs):
-        x = features[:, 0, :]  # take <s> token (equiv. to [CLS])
-        x = self.dropout(x)
+        x = self.dropout(features)
         x = self.dense(x)
         x = torch.tanh(x)
         x = self.dropout(x)
