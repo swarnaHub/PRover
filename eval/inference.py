@@ -64,24 +64,17 @@ def solve_LP(edge_logits, fact_rule_identifier, node_labels):
     #prob.writeLP("output/NodeEdgeConsistency.lp")
     prob.solve()
 
-    edge_assignment = []
-    edge_assignment_indicators = np.zeros((len(node_labels) , len(node_labels)), dtype=int)
+    edges = []
     for v in prob.variables():
         if v.varValue > 0 and v.name.endswith("1"):
-        #if v.varValue >=0:
             #print(v.name, "=", v.varValue)
-            edge_assignment.append(v.name)
             name = v.name.split("_")
             n_i = int(name[1]) - 1
             n_j = int(name[2]) - 1
-            edge_assignment_indicators[n_i][n_j] = 1
+            edges.append((n_i, n_j))
     print("Max score = ", value(prob.objective))
-    edge_assignment_indicators = edge_assignment_indicators.reshape((len(node_labels) * len(node_labels)))
-    edge_assignment_indicators = edge_assignment_indicators.tolist()
-    for _ in range( (26 * 26) - (len(node_labels) * len(node_labels)) ):
-        edge_assignment_indicators.append(-100)
 
-    return edge_assignment, edge_assignment_indicators
+    return edges
 
 def get_fact_rule_identifiers():
     data_dir = "../data/depth-5"
@@ -107,8 +100,8 @@ def get_fact_rule_identifiers():
                 fact_rule_identifier.append(1)
         fact_rule_identifier.append(0) #NAF
         for (j, question) in enumerate(record["questions"]):
-            #if question["meta"]["QDep"] != 1:
-            #    continue
+            if question["meta"]["QDep"] != 3:
+                continue
             fact_rule_identifiers.append(fact_rule_identifier)
 
     return fact_rule_identifiers
@@ -127,7 +120,7 @@ if __name__ == '__main__':
     assert len(edge_logits) == len(fact_rule_identifiers)
 
     edge_assignments = []
-    f = open("../output/edge_assignment_identifiers_all.lst", "w")
+    f = open("../output/edge_assignment_identifiers_d3.lst", "w")
     for (i, (edge_logit, node_pred)) in enumerate(zip(edge_logits, node_preds)):
         print(i)
         edge_logit = edge_logit[1:-1].split(", ")
@@ -140,10 +133,10 @@ if __name__ == '__main__':
 
         edge_logit = np.array(edge_logit).reshape(len(node_pred), len(node_pred))
 
-        edge_assignment, edge_assignment_identifiers = solve_LP(edge_logit, fact_rule_identifiers[i], node_pred)
+        edges = solve_LP(edge_logit, fact_rule_identifiers[i], node_pred)
 
-        print(edge_assignment)
-        f.write(str(edge_assignment_identifiers))
+        print(edges)
+        f.write(str(edges))
         f.write("\n")
     f.close()
 

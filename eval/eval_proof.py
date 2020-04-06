@@ -1,15 +1,14 @@
 import argparse
 import os
 import json
-import numpy as np
 
 from proof_utils import get_proof_graph, get_proof_graph_with_fail
 
-def get_node_edge_label(proofs, sentence_scramble, nfact, nrule):
-    all_node_labels, all_edge_labels = [], []
+def get_node_edge_indices(proofs, sentence_scramble, nfact, nrule):
+    all_node_indices, all_edge_indices = [], []
     for proof in proofs.split("OR"):
-        node_label = [0] * (nfact + nrule + 1)
-        edge_label = np.zeros((nfact + nrule + 1, nfact + nrule + 1), dtype=int)
+        node_indices = []
+        edge_indices = []
 
         if "FAIL" in proof:
             nodes, edges = get_proof_graph_with_fail(proof)
@@ -23,35 +22,22 @@ def get_node_edge_label(proofs, sentence_scramble, nfact, nrule):
             else:
                 component = "rule" + str(index - nfact)
             component_index_map[component] = i
+        component_index_map["NAF"] = nfact+nrule
 
         for node in nodes:
-            if node != "NAF":
-                index = component_index_map[node]
-            else:
-                index = nfact + nrule
-            node_label[index] = 1
+            index = component_index_map[node]
+            node_indices.append(index)
 
         edges = list(set(edges))
         for edge in edges:
-            if edge[0] != "NAF":
-                start_index = component_index_map[edge[0]]
-            else:
-                start_index = nfact + nrule
-            if edge[1] != "NAF":
-                end_index = component_index_map[edge[1]]
-            else:
-                end_index = nfact + nrule
+            start_index = component_index_map[edge[0]]
+            end_index = component_index_map[edge[1]]
+            edge_indices.append((start_index, end_index))
 
-            edge_label[start_index][end_index] = 1
+        all_node_indices.append(node_indices)
+        all_edge_indices.append(edge_indices)
 
-        # Ignore diagonal
-        for i in range(len(edge_label)):
-            edge_label[i][i] = -100
-
-        all_node_labels.append(node_label)
-        all_edge_labels.append(list(edge_label.flatten()))
-
-    return all_node_labels, all_edge_labels
+    return all_node_indices, all_edge_indices
 
 def get_gold_proof_nodes_edges(data_dir):
     test_file = os.path.join(data_dir, "test.jsonl")
@@ -72,8 +58,10 @@ def get_gold_proof_nodes_edges(data_dir):
             proofs = meta_data["proofs"]
             nfact = meta_record["NFact"]
             nrule = meta_record["NRule"]
-            all_node_labels, all_edge_labels = get_node_edge_label(proofs, sentence_scramble, nfact, nrule)
-            gold_proofs.append((all_node_labels, all_edge_labels))
+            if question["meta"]["QDep"] != 3:
+                continue
+            all_node_indices, all_edge_indices = get_node_edge_indices(proofs, sentence_scramble, nfact, nrule)
+            gold_proofs.append((all_node_indices, all_edge_indices))
 
     return gold_proofs
 
@@ -91,18 +79,28 @@ if __name__ == '__main__':
     with open(args.node_pred_file, "r", encoding="utf-8-sig") as f:
         lines = f.read().splitlines()
         for line in lines:
-            all_pred_nodes.append([int(x) for x in line[1:-1].split(",")])
+            pred_nodes = [int(x) for x in line[1:-1].split(",")]
+            pred_nodes = [i for i, x in enumerate(pred_nodes) if x == 1]
+            all_pred_nodes.append(pred_nodes)
 
     all_pred_edges = []
     with open(args.edge_pred_file, "r", encoding="utf-8-sig") as f:
         lines = f.read().splitlines()
         for line in lines:
-            all_pred_edges.append([int(x) for x in line[1:-1].split(",")])
+            if line == "[]":
+                all_pred_edges.append([])
+            else:
+                edges = line[2:-2].split("), (")
+                pred_edges = []
+                for edge in edges:
+                    edge = edge.split(", ")
+                    pred_edges.append((int(edge[0]), int(edge[1])))
+                all_pred_edges.append(pred_edges)
 
     assert len(all_gold_proofs) == len(all_pred_nodes)
     assert len(all_gold_proofs) == len(all_pred_edges)
 
-    print(len(all_gold_proofs))
+    print("Num samples = " + str(len(all_gold_proofs)))
 
     correct_nodes = 0
     correct_edges = 0
@@ -110,32 +108,27 @@ if __name__ == '__main__':
     for (i, gold_proofs) in enumerate(all_gold_proofs):
         gold_nodes = gold_proofs[0]
         gold_edges = gold_proofs[1]
+        pred_node = all_pred_nodes[i]
 
         for (j, gold_node) in enumerate(gold_nodes):
-            if gold_node == all_pred_nodes[i]:
+            if set(gold_node) == set(pred_node):
                 correct_nodes += 1
                 break
 
         for (j, gold_edge) in enumerate(gold_edges):
-            pred_edge = all_pred_edges[i][:len(gold_edge)]
-            for (k, edge) in enumerate(gold_edge):
-                if edge == -100:
-                    pred_edge[k] = -100
+            pred_edge = all_pred_edges[i]
 
-            if pred_edge == gold_edge:
+            if set(pred_edge) == set(gold_edge):
                 correct_edges += 1
                 break
 
 
         for (j, (gold_node, gold_edge)) in enumerate(zip(gold_nodes, gold_edges)):
             is_correct_graph = False
-            if gold_node == all_pred_nodes[i]:
-                pred_edge = all_pred_edges[i][:len(gold_edge)]
-                for (k, edge) in enumerate(gold_edge):
-                    if edge == -100:
-                        pred_edge[k] = -100
+            if set(gold_node) == set(pred_node):
+                pred_edge = all_pred_edges[i]
 
-                if pred_edge == gold_edge:
+                if set(pred_edge) == set(gold_edge):
                     correct_graphs += 1
                     is_correct_graph = True
                     break
