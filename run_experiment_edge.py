@@ -38,6 +38,7 @@ from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
 from torch.utils.data.distributed import DistributedSampler
 from tensorboardX import SummaryWriter
 from tqdm import tqdm, trange
+from scipy.special import softmax
 import pathlib
 
 from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
@@ -302,7 +303,11 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
         eval_loss = eval_loss / nb_eval_steps
         preds = np.argmax(preds, axis=1)
         node_preds = np.argmax(node_preds, axis=2)
+
+        normalized_logits = softmax(edge_preds, axis=2)
+        edge_pred_logits = normalized_logits[:, :, 1]
         edge_preds = np.argmax(edge_preds, axis=2)
+
 
         if not eval_split == "test":
             result = compute_metrics(eval_task, preds, out_label_ids)
@@ -343,6 +348,13 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
             logger.info("***** Write predictions {} on {} *****".format(prefix, eval_split))
             for edge_pred in edge_preds:
                 writer.write(str(list(edge_pred)) + "\n")
+
+        # prediction edges
+        output_edge_pred_file = os.path.join(eval_output_dir, "prediction_edge_logits_{}.lst".format(eval_split))
+        with open(output_edge_pred_file, "w") as writer:
+            logger.info("***** Write predictions {} on {} *****".format(prefix, eval_split))
+            for edge_pred_logit in edge_pred_logits:
+                writer.write(str(list(edge_pred_logit)) + "\n")
 
         '''
         # prediction proofs
