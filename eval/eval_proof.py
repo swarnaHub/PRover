@@ -50,6 +50,8 @@ def get_gold_proof_nodes_edges(data_dir):
     for record, meta_record in zip(f1, f2):
         record = json.loads(record)
         meta_record = json.loads(meta_record)
+        #if not record["id"].startswith("AttPosBirdsVar2"):
+        #    continue
 
         sentence_scramble = record["meta"]["sentenceScramble"]
         for (j, question) in enumerate(record["questions"]):
@@ -58,8 +60,8 @@ def get_gold_proof_nodes_edges(data_dir):
             proofs = meta_data["proofs"]
             nfact = meta_record["NFact"]
             nrule = meta_record["NRule"]
-            if question["meta"]["QDep"] != 3:
-                continue
+            #if question["meta"]["QDep"] != 3:
+            #    continue
             all_node_indices, all_edge_indices = get_node_edge_indices(proofs, sentence_scramble, nfact, nrule)
             gold_proofs.append((all_node_indices, all_edge_indices))
 
@@ -105,22 +107,59 @@ if __name__ == '__main__':
     correct_nodes = 0
     correct_edges = 0
     correct_graphs = 0
+    macro_precision_nodes, macro_precision_edges = 0, 0
+    macro_recall_nodes, macro_recall_edges = 0, 0
     for (i, gold_proofs) in enumerate(all_gold_proofs):
         gold_nodes = gold_proofs[0]
         gold_edges = gold_proofs[1]
         pred_node = all_pred_nodes[i]
 
+        best_common_node = 0
+        best_pred_node = 0
+        best_gold_node = 0
         for (j, gold_node) in enumerate(gold_nodes):
             if set(gold_node) == set(pred_node):
                 correct_nodes += 1
                 break
+            common_node = len(list(set(gold_node) & set(pred_node)))
+            if common_node > best_common_node:
+                best_common_node = common_node
+                best_pred_node = len(pred_node)
+                best_gold_node = len(gold_node)
 
+        if best_pred_node > 0:
+            macro_precision_nodes += best_common_node/best_pred_node
+        else:
+            macro_precision_nodes += 1.0
+        if best_gold_node > 0:
+            macro_recall_nodes += best_common_node/best_gold_node
+        else:
+            macro_recall_nodes += 1.0
+
+        best_common_edge = 0
+        best_pred_edge = 0
+        best_gold_edge = 0
         for (j, gold_edge) in enumerate(gold_edges):
             pred_edge = all_pred_edges[i]
 
             if set(pred_edge) == set(gold_edge):
                 correct_edges += 1
                 break
+
+            common_edge = len(set(pred_edge) & set(gold_edge))
+            if common_edge > best_common_node:
+                best_common_edge = common_edge
+                best_pred_edge = len(pred_edge)
+                best_gold_edge = len(gold_edge)
+
+        if best_pred_edge > 0:
+            macro_precision_edges += best_common_edge/best_pred_edge
+        else:
+            macro_precision_edges += 1.0
+        if best_gold_edge > 0:
+            macro_recall_edges += best_common_edge/best_gold_edge
+        else:
+            macro_recall_edges += 1.0
 
 
         for (j, (gold_node, gold_edge)) in enumerate(zip(gold_nodes, gold_edges)):
@@ -139,4 +178,18 @@ if __name__ == '__main__':
     print("Node accuracy = " + str(correct_nodes/len(all_gold_proofs)))
     print("Edge accuracy = " + str(correct_edges / len(all_gold_proofs)))
     print("Graph accuracy = " + str(correct_graphs / len(all_gold_proofs)))
+
+    macro_precision_nodes /= len(all_gold_proofs)
+    macro_recall_nodes /= len(all_gold_proofs)
+    f1_nodes = 2 * macro_precision_nodes * macro_recall_nodes / (macro_precision_nodes + macro_recall_nodes)
+    print("Macro precision nodes = " + str(macro_precision_nodes))
+    print("Macro recall nodes = " + str(macro_recall_nodes))
+    print("F1 nodes = " + str(f1_nodes))
+
+    macro_precision_edges /= len(all_gold_proofs)
+    macro_recall_edges /= len(all_gold_proofs)
+    f1_edges = 2*macro_precision_edges*macro_recall_edges/(macro_precision_edges+macro_recall_edges)
+    print("Macro precision edges = " + str(macro_precision_edges))
+    print("Macro recall edges = " + str(macro_recall_edges))
+    print("F1 edges = " + str(f1_edges))
 
