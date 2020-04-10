@@ -147,7 +147,7 @@ if __name__ == '__main__':
                 break
 
             common_edge = len(set(pred_edge) & set(gold_edge))
-            if common_edge > best_common_node:
+            if common_edge > best_common_edge:
                 best_common_edge = common_edge
                 best_pred_edge = len(pred_edge)
                 best_gold_edge = len(gold_edge)
