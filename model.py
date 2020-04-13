@@ -46,7 +46,8 @@ class RobertaForRRWithNodeLoss(BertPreTrainedModel):
         self.num_labels = config.num_labels
         self.roberta = RobertaModel(config)
         self.classifier = RobertaClassificationHead(config)
-        self.classifier_node = torch.nn.Linear(config.hidden_size, config.num_labels)
+        self.naf_layer = nn.Linear(config.hidden_size, config.hidden_size)
+        self.classifier_node = NodeClassificationHead(config)
 
         self.apply(self.init_weights)
 
@@ -56,7 +57,7 @@ class RobertaForRRWithNodeLoss(BertPreTrainedModel):
                             attention_mask=attention_mask, head_mask=head_mask)
         sequence_output = outputs[0]
         cls_output = sequence_output[:, 0, :]
-        naf_output = -cls_output
+        naf_output = self.naf_layer(cls_output)
         logits = self.classifier(sequence_output)
 
         max_node_length = node_label.shape[1]
