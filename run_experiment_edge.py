@@ -52,7 +52,7 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
 
 from pytorch_transformers import AdamW, WarmupLinearSchedule
 
-from model import RobertaForRRWithNodeEdgeLoss, RobertaForMultipleChoice
+from model import RobertaForRRWithEdgeLoss, RobertaForMultipleChoice
 from utils import (compute_metrics, compute_sequence_metrics, compute_graph_metrics, convert_examples_to_features,
                    output_modes, processors,
                    convert_examples_to_features_RR)
@@ -72,7 +72,7 @@ MODEL_CLASSES = {
     'xlm': (XLMConfig, XLMForSequenceClassification, XLMTokenizer),
     'roberta': (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
     'roberta_mc': (RobertaConfig, RobertaForMultipleChoice, RobertaTokenizer),
-    'roberta_rr': (RobertaConfig, RobertaForRRWithNodeEdgeLoss, RobertaTokenizer)
+    'roberta_rr': (RobertaConfig, RobertaForRRWithEdgeLoss, RobertaTokenizer)
 }
 
 
@@ -160,17 +160,15 @@ def train(args, train_dataset, model, tokenizer):
                       'token_type_ids': batch[2] if args.model_type in ['bert', 'xlnet', 'bert_mc'] else None,
                       # XLM don't use segment_ids
                       'proof_offset': batch[3],
-                      'node_label': batch[4],
-                      'edge_label': batch[5],
-                      'labels': batch[6]}
+                      'edge_label': batch[4],
+                      'labels': batch[5]}
             outputs = model(**inputs)
-            loss, qa_loss, node_loss, edge_loss = outputs[:4]  # model outputs are always tuple in pytorch-transformers (see doc)
+            loss, qa_loss, edge_loss = outputs[:3]  # model outputs are always tuple in pytorch-transformers (see doc)
 
             if args.n_gpu > 1:
                 loss = loss.mean()  # mean() to average on multi-gpu parallel training
                 # logger.info("Loss = %f", loss)
                 # logger.info("QA Loss = %f", qa_loss.mean())
-                # logger.info("Node Loss = %f", node_loss.mean())
                 # logger.info("Edge Loss = %f", edge_loss.mean())
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
@@ -258,10 +256,8 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
         eval_loss = 0.0
         nb_eval_steps = 0
         preds = None
-        node_preds = None
         edge_preds = None
         out_label_ids = None
-        out_node_label_ids = None
         out_edge_label_ids = None
         for batch in tqdm(eval_dataloader, desc="Evaluating", mininterval=10, ncols=100):
             model.eval()
@@ -273,36 +269,29 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
                           'token_type_ids': batch[2] if args.model_type in ['bert', 'xlnet', 'bert_mc'] else None,
                           # XLM don't use segment_ids
                           'proof_offset': batch[3],
-                          'node_label': batch[4],
-                          'edge_label': batch[5],
-                          'labels': batch[6]}
+                          'edge_label': batch[4],
+                          'labels': batch[5]}
                 outputs = model(**inputs)
-                tmp_eval_loss, tmp_qa_loss, tmp_node_loss, tmp_edge_loss, logits, node_logits, edge_logits = outputs[:7]
+                tmp_eval_loss, tmp_qa_loss, tmp_edge_loss, logits, edge_logits = outputs[:5]
 
                 eval_loss += tmp_eval_loss.mean().item()
             nb_eval_steps += 1
             if preds is None:
                 preds = logits.detach().cpu().numpy()
-                node_preds = node_logits.detach().cpu().numpy()
                 edge_preds = edge_logits.detach().cpu().numpy()
                 if not eval_split == "test":
                     out_label_ids = inputs['labels'].detach().cpu().numpy()
-                    out_node_label_ids = inputs['node_label'].detach().cpu().numpy()
                     out_edge_label_ids = inputs['edge_label'].detach().cpu().numpy()
             else:
                 preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
-                node_preds = np.append(node_preds, node_logits.detach().cpu().numpy(), axis=0)
                 edge_preds = np.append(edge_preds, edge_logits.detach().cpu().numpy(), axis=0)
                 if not eval_split == "test":
                     out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
-                    out_node_label_ids = np.append(out_node_label_ids,
-                                                       inputs['node_label'].detach().cpu().numpy(), axis=0)
                     out_edge_label_ids = np.append(out_edge_label_ids,
                                                    inputs['edge_label'].detach().cpu().numpy(), axis=0)
 
         eval_loss = eval_loss / nb_eval_steps
         preds = np.argmax(preds, axis=1)
-        node_preds = np.argmax(node_preds, axis=2)
 
         normalized_logits = softmax(edge_preds, axis=2)
         edge_pred_logits = normalized_logits[:, :, 1]
@@ -311,11 +300,8 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
 
         if not eval_split == "test":
             result = compute_metrics(eval_task, preds, out_label_ids)
-            result_graph = compute_graph_metrics(eval_task, node_preds, out_node_label_ids, edge_preds, out_edge_label_ids)
             result_split = {}
             for k, v in result.items():
-                result_split[k + "_{}".format(eval_split)] = v
-            for k, v in result_graph.items():
                 result_split[k + "_{}".format(eval_split)] = v
             results.update(result_split)
 
@@ -332,15 +318,6 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
             logger.info("***** Write predictions {} on {} *****".format(prefix, eval_split))
             for pred in preds:
                 writer.write("{}\n".format(processor.get_labels()[pred]))
-
-        # prediction nodes
-        output_node_pred_file = os.path.join(eval_output_dir, "prediction_nodes_{}.lst".format(eval_split))
-        with open(output_node_pred_file, "w") as writer:
-            logger.info("***** Write predictions {} on {} *****".format(prefix, eval_split))
-            for node_gold, node_pred in zip(out_node_label_ids, node_preds):
-                node_gold = node_gold[np.where(node_gold != -100)[0]]
-                node_pred = node_pred[:len(node_gold)]
-                writer.write(str(list(node_pred)) + "\n")
 
         # prediction edges
         output_edge_pred_file = os.path.join(eval_output_dir, "prediction_edges_{}.lst".format(eval_split))
@@ -482,7 +459,7 @@ def load_and_cache_examples(args, task, tokenizer, evaluate=False, eval_split="t
     all_edge_label = torch.tensor([f.edge_label for f in features], dtype=torch.long)
     all_label_ids = torch.tensor([f.label_id for f in features], dtype=torch.long)
 
-    dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_proof_offset, all_node_label, all_edge_label,
+    dataset = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_proof_offset, all_edge_label,
                             all_label_ids)
     return dataset, examples
 
