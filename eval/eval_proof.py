@@ -47,11 +47,12 @@ def get_gold_proof_nodes_edges(data_dir):
     f2 = open(meta_test_file, "r", encoding="utf-8-sig")
 
     gold_proofs = []
+    gold_labels = []
     for record, meta_record in zip(f1, f2):
         record = json.loads(record)
         meta_record = json.loads(meta_record)
-        #if not record["id"].startswith("AttPosBirdsVar2"):
-        #    continue
+        #if not record["id"].startswith("AttPosElectricityRB4"):
+        #   continue
 
         sentence_scramble = record["meta"]["sentenceScramble"]
         for (j, question) in enumerate(record["questions"]):
@@ -60,22 +61,27 @@ def get_gold_proof_nodes_edges(data_dir):
             proofs = meta_data["proofs"]
             nfact = meta_record["NFact"]
             nrule = meta_record["NRule"]
-            #if question["meta"]["QDep"] != 3:
+            label = question["label"]
+            #if question["meta"]["QDep"] != 5:
             #    continue
             all_node_indices, all_edge_indices = get_node_edge_indices(proofs, sentence_scramble, nfact, nrule)
             gold_proofs.append((all_node_indices, all_edge_indices))
+            gold_labels.append(label)
 
-    return gold_proofs
+    return gold_proofs, gold_labels
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", default=None, type=str, required=True)
+    parser.add_argument("--qa_pred_file", default=None, type=str, required=True)
     parser.add_argument("--node_pred_file", default=None, type=str, required=True)
     parser.add_argument("--edge_pred_file", default=None, type=str, required=True)
 
     args = parser.parse_args()
-    all_gold_proofs = get_gold_proof_nodes_edges(args.data_dir)
+    with open(args.qa_pred_file, "r", encoding="utf-8-sig") as f:
+        all_pred_labels = f.read().splitlines()
+    all_gold_proofs, all_gold_labels = get_gold_proof_nodes_edges(args.data_dir)
 
     all_pred_nodes = []
     with open(args.node_pred_file, "r", encoding="utf-8-sig") as f:
@@ -101,15 +107,23 @@ if __name__ == '__main__':
 
     assert len(all_gold_proofs) == len(all_pred_nodes)
     assert len(all_gold_proofs) == len(all_pred_edges)
+    assert len(all_gold_proofs) == len(all_gold_labels)
+    assert len(all_gold_labels) == len(all_pred_labels)
 
     print("Num samples = " + str(len(all_gold_proofs)))
 
+    correct_qa = 0
     correct_nodes = 0
     correct_edges = 0
-    correct_graphs = 0
+    correct_proofs = 0
+    correct_samples = 0
     macro_precision_nodes, macro_precision_edges = 0, 0
     macro_recall_nodes, macro_recall_edges = 0, 0
     for (i, gold_proofs) in enumerate(all_gold_proofs):
+        is_correct_qa = False
+        if str(all_gold_labels[i]) == all_pred_labels[i]:
+            is_correct_qa = True
+            correct_qa += 1
         gold_nodes = gold_proofs[0]
         gold_edges = gold_proofs[1]
         pred_node = all_pred_nodes[i]
@@ -161,23 +175,28 @@ if __name__ == '__main__':
         else:
             macro_recall_edges += 1.0
 
-
+        is_correct_proof = False
         for (j, (gold_node, gold_edge)) in enumerate(zip(gold_nodes, gold_edges)):
-            is_correct_graph = False
             if set(gold_node) == set(pred_node):
                 pred_edge = all_pred_edges[i]
 
                 if set(pred_edge) == set(gold_edge):
-                    correct_graphs += 1
-                    is_correct_graph = True
+                    correct_proofs += 1
+                    is_correct_proof = True
                     break
 
-            if is_correct_graph:
+            if is_correct_proof:
                 break
 
+        if is_correct_proof and is_correct_qa:
+            correct_samples += 1
+
+    print("QA accuracy = " + str(correct_qa/len(all_gold_labels)))
     print("Node accuracy = " + str(correct_nodes/len(all_gold_proofs)))
     print("Edge accuracy = " + str(correct_edges / len(all_gold_proofs)))
-    print("Graph accuracy = " + str(correct_graphs / len(all_gold_proofs)))
+    print("Proof accuracy = " + str(correct_proofs / len(all_gold_proofs)))
+    print("Full accuracy = " + str(correct_samples / len(all_gold_proofs)))
+    print("QA accuracy among correct proofs = " + str(correct_samples / correct_proofs))
 
     macro_precision_nodes /= len(all_gold_proofs)
     macro_recall_nodes /= len(all_gold_proofs)
