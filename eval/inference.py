@@ -7,7 +7,56 @@ def solve_LP(edge_logits, fact_rule_identifier, node_labels):
     prob = LpProblem("Node edge consistency ", LpMaximize)
     all_vars = {}
 
+    all_flow_vars = {}
+
+    source_id = -1
+    sink_id = -2
+
     print(node_labels)
+
+    # get ids of nodes that are present
+    node_ids_present = []
+    for i in range(len(node_labels)):
+        if int(node_labels[i]) == 1:
+            node_ids_present.append(i)
+
+    if len(node_ids_present) == 0:
+        return []
+
+    # add flow from source to one node present
+    # arbitarily choosing that node to be the last node
+    # 1000 is infinity
+    all_flow_vars[(source_id, node_ids_present[-1])] = \
+        LpVariable("Flow_source_" + str(node_ids_present[-1] + 1), 0, 1000, LpInteger)
+
+    # add flow from all nodes present to sink
+    for i in range(len(node_ids_present)):
+        temp = node_ids_present[i]
+        all_flow_vars[(temp, sink_id)] = LpVariable("Flow_" + str(temp + 1) + "_sink", 0, 1000, LpInteger)
+
+    # define capacities
+    C = {}
+    # capacity from source to 1st node is number of nodes in graph
+    C[(source_id, node_ids_present[-1])] = len(node_ids_present)
+    C[(node_ids_present[-1], source_id)] = 0
+
+    # capacity from nodes in graph to sink is 1
+    for i in range(len(node_ids_present)):
+        temp = node_ids_present[i]
+        C[(temp, sink_id)] = 1
+        C[(sink_id, temp)] = 0
+
+    # capacities inside graph are infinite or say 100 in this case, except self loops and if the edge is not possible
+    arcs = set()
+    for i in range(len(edge_logits)):
+        for j in range(len(edge_logits)):
+            if (i == j) or (i not in node_ids_present) or (j not in node_ids_present):
+                C[(i, j)] = 0
+            else:
+                C[(i, j)] = 1000
+                arcs.add((i, j))
+                arcs.add((j, i))
+    arcs = list(arcs)
 
     # Optimization Problem
     opt_prob = None
@@ -17,8 +66,13 @@ def solve_LP(edge_logits, fact_rule_identifier, node_labels):
                 continue
             var0 = LpVariable("Edge_" + str(i + 1) + "_" + str(j + 1) + "_0", 0, 1, LpInteger)
             var1 = LpVariable("Edge_" + str(i + 1) + "_" + str(j + 1) + "_1", 0, 1, LpInteger)
+
             all_vars[(i, j, 0)] = var0
             all_vars[(i, j, 1)] = var1
+
+            f_var = LpVariable("Flow_" + str(i + 1) + "_" + str(j + 1), 0, 1000, LpInteger)
+            all_flow_vars[(i, j)] = f_var
+
             if opt_prob is None:
                 opt_prob = (1 - edge_logits[i][j]) * all_vars[(i, j, 0)] + edge_logits[i][j] * all_vars[(i, j, 1)]
             else:
@@ -46,30 +100,52 @@ def solve_LP(edge_logits, fact_rule_identifier, node_labels):
             if fact_rule_identifier[i] == 1 and fact_rule_identifier[j] == 0:
                 prob += all_vars[(i, j, 1)] == 0, "Rule Fact" + str(i) + "_" + str(j)
 
-    # Make sure there is an edge from every node only if the number of predicted nodes is > 1
-    if node_labels.count(1) > 1:
-        for i in range(len(edge_logits)):
-            if node_labels[i] == 0:
+            # flow less than capacity
+            prob += all_flow_vars[(i, j)] <= C[(i, j)], "Capacity constraint " + str(i) + " " + str(j)
+
+    # capacity constraint of source to 1st node
+    prob += all_flow_vars[(source_id, node_ids_present[-1])] <= C[
+        (source_id, node_ids_present[-1])], "Capacity constraint source " + str(node_ids_present[-1])
+
+    # capacity constraint of nodes to sink
+    for i in range(len(node_ids_present)):
+        temp = node_ids_present[i]
+        prob += all_flow_vars[(temp, sink_id)] == C[(temp, sink_id)], "Capacity constraint " + str(temp) + " sink"
+
+    # node flow conservation constraint
+    for n in range(len(edge_logits)):
+        if n == node_ids_present[-1]:
+            prob += (all_flow_vars[(source_id,n)] + lpSum([all_flow_vars[(i, j)] for (i, j) in arcs if j == n]) ==
+                     lpSum([all_flow_vars[(i, j)] for (i, j) in arcs if i == n])+ all_flow_vars[(n,sink_id)]), \
+                    "Flow Conservation in Node " + str(n)
+        elif n in node_ids_present and n != node_ids_present[-1]:
+            prob += (lpSum([all_flow_vars[(i, j)] for (i, j) in arcs if j == n ]) ==
+                     lpSum([all_flow_vars[(i, j)] for (i, j) in arcs if i == n ]) + all_flow_vars[(n,sink_id)]), \
+                    "Flow Conservation in Node " + str(n)
+        else:
+            prob += (lpSum([all_flow_vars[(i, j)] for (i, j) in arcs if j == n]) ==
+                     lpSum([all_flow_vars[(i, j)] for (i, j) in arcs if i == n])), \
+                    "Flow Conservation in Node " + str(n)
+
+    # Max flow should be equal to number of nodes in graph
+    # to ensure this make the flow from source exactly equal to capacity
+    # also ensure that the flow occurs only when the edge exists
+    prob += all_flow_vars[(source_id, node_ids_present[-1])] == C[(source_id, node_ids_present[-1])]
+    for i in range(len(edge_logits)):
+        for j in range(len(edge_logits)):
+            if i == j:
                 continue
-            sum = None
-            for j in range(len(edge_logits)):
-                if i == j:
-                    continue
-                if sum is None:
-                    sum = all_vars[(i, j, 1)] + all_vars[(j, i, 1)]
-                else:
-                    sum += all_vars[(i, j, 1)] + all_vars[(j, i, 1)]
+            prob += len(node_ids_present)*(all_vars[i, j, 1] + all_vars[j, i, 1]) - all_flow_vars[(i, j)] >= 0, "Valid flow " + str(
+                    i + 1) + " " + str(j + 1)
 
-            prob += sum >= 1, "Node connected " + str(i)
-
-    # prob.writeLP("output/NodeEdgeConsistency.lp")
     prob.solve()
 
     edges = []
     for v in prob.variables():
-        if v.varValue > 0 and v.name.endswith("1"):
-            # print(v.name, "=", v.varValue)
+        if v.varValue > 0 and v.name.endswith("1") and v.name.startswith("Edge"):
             name = v.name.split("_")
+            if name[1] == 'source' or name[2] == 'sink' or name[2] == 'source' or name[1] == 'sink':
+                continue
             n_i = int(name[1]) - 1
             n_j = int(name[2]) - 1
             edges.append((n_i, n_j))
@@ -80,6 +156,7 @@ def solve_LP(edge_logits, fact_rule_identifier, node_labels):
 
 def get_fact_rule_identifiers():
     data_dir = "../data/depth-5"
+    # data_dir = "../data/birds-electricity"
     test_file = os.path.join(data_dir, "test.jsonl")
     meta_test_file = os.path.join(data_dir, "meta-test.jsonl")
 
@@ -102,18 +179,22 @@ def get_fact_rule_identifiers():
                 fact_rule_identifier.append(1)
         fact_rule_identifier.append(0)  # NAF
         for (j, question) in enumerate(record["questions"]):
-            if question["meta"]["QDep"] != 3:
-                continue
+            #if question["meta"]["QDep"] != 5:
+            #    continue
             fact_rule_identifiers.append(fact_rule_identifier)
 
     return fact_rule_identifiers
 
 
 if __name__ == '__main__':
-    edge_logit_file = open("../output/cycle_model/prediction_edge_logits_dev.lst", "r", encoding="utf-8-sig")
+    edge_logit_file = open(
+        "../output/best_model/prediction_edge_logits_dev.lst", "r",
+        encoding="utf-8-sig")
     edge_logits = edge_logit_file.read().splitlines()
 
-    node_pred_file = open("../output/cycle_model/prediction_nodes_dev.lst", "r", encoding="utf-8-sig")
+    node_pred_file = open(
+        "../output/best_model/prediction_nodes_dev.lst", "r",
+        encoding="utf-8-sig")
     node_preds = node_pred_file.read().splitlines()
 
     fact_rule_identifiers = get_fact_rule_identifiers()
@@ -122,7 +203,7 @@ if __name__ == '__main__':
     assert len(edge_logits) == len(fact_rule_identifiers)
 
     edge_assignments = []
-    f = open("../output/edge_assignment_identifiers_d3.lst", "w")
+    f = open("../output/edge_assignment_identifiers_overall.lst", "w")
     for (i, (edge_logit, node_pred)) in enumerate(zip(edge_logits, node_preds)):
         print(i)
         edge_logit = edge_logit[1:-1].split(", ")

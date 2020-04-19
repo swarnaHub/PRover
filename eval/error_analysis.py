@@ -60,7 +60,7 @@ def get_gold_proof_nodes_edges(data_dir):
             proofs = meta_data["proofs"]
             nfact = meta_record["NFact"]
             nrule = meta_record["NRule"]
-            #if question["meta"]["QDep"] != 3:
+            #if question["meta"]["QDep"] != 5:
             #    continue
             all_node_indices, all_edge_indices = get_node_edge_indices(proofs, sentence_scramble, nfact, nrule)
             gold_proofs.append((all_node_indices, all_edge_indices))
@@ -75,6 +75,13 @@ def is_connected(edges):
         g.add_edge(edge[0], edge[1])
 
     return nx.is_connected(g)
+
+def get_cc(edges):
+    g = nx.Graph()
+    for edge in edges:
+        g.add_edge(edge[0], edge[1])
+
+    return nx.number_connected_components((g))
 
 def is_direction_wrong(gold_edge, pred_edge):
     if len(gold_edge) != len(pred_edge):
@@ -131,12 +138,15 @@ if __name__ == '__main__':
 
         if not is_correct:
             if not is_connected(best_pred_edge):
+                print(i)
+                print(best_pred_edge)
+                print(get_cc(best_pred_edge))
                 count_disconnected += 1
 
             if is_direction_wrong(best_gold_edge, best_pred_edge):
-                print(best_gold_edge)
-                print(best_pred_edge)
-                print("\n")
+                #print(best_gold_edge)
+                #print(best_pred_edge)
+                #print("\n")
                 direction_wrong += 1
 
 

@@ -402,7 +402,7 @@ class RRProcessor(DataProcessor):
             sentence_scramble = record["meta"]["sentenceScramble"]
             for (j, question) in enumerate(record["questions"]):
                 # Uncomment to train/evaluate at a certain depth
-                #if question["meta"]["QDep"] != 3:
+                #if question["meta"]["QDep"] != 5:
                 #    continue
                 id = question["id"]
                 label = question["label"]
