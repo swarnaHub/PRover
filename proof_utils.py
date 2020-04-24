@@ -1,7 +1,6 @@
 class Node:
-    def __init__(self, head, elements):
+    def __init__(self, head):
         self.head = head
-        self.elements = elements
 
     def __str__(self):
         return str(self.head)
@@ -9,6 +8,7 @@ class Node:
 def get_proof_graph(proof_str):
     stack = []
     last_open = 0
+    last_open_index = 0
     pop_list = []
     all_edges = []
     all_nodes = []
@@ -19,26 +19,27 @@ def get_proof_graph(proof_str):
 
     should_join = False
     for i in range(len(proof_str)):
+
         _s = proof_str[i]
         x = _s.strip()
         if len(x) == 0:
             continue
 
         if x == "(":
-            stack.append(x)
+            stack.append((x, i))
             last_open = len(stack) - 1
+            last_open_index = i
         elif x == ")":
             for j in range(last_open + 1, len(stack)):
-                if isinstance(stack[j], Node):
-                    pop_list.append(stack[j])
+                if isinstance(stack[j][0], Node):
+                    pop_list.append((stack[j][1], stack[j][0]))
 
             stack = stack[:last_open]
             for j in range((len(stack))):
-                if stack[j] == "(":
+                if stack[j][0] == "(":
                     last_open = j
-            for p in pop_list:
-                stack.append(p)
-            pop_list = []
+                    last_open_index = stack[j][1]
+
         elif x == '[' or x == ']':
             pass
         elif x == "->":
@@ -47,26 +48,19 @@ def get_proof_graph(proof_str):
             # terminal
             if x not in all_nodes:
                 all_nodes.append(x)
-            for j in range(last_open + 1, len(stack)):
-                if isinstance(stack[j], Node):
-                    pop_list.append(stack[j])
 
-            stack = stack[:last_open + 1]
+            if should_join:
 
-            if len(pop_list) == 0 or not should_join:
-                stack.append(Node(x, [x]))
-            else:
-                all_elems = []
-                # A new terminal node can get appended to a maximum of two nodes
-                assert(len(pop_list)) <= 3
+                new_pop_list = []
+                # Choose which ones to add the node to
+                for (index, p) in pop_list:
+                    if index < last_open_index:
+                        new_pop_list.append((index, p))
+                    else:
+                        all_edges.append((p.head, x))
+                pop_list = new_pop_list
 
-                for p in pop_list:
-                    all_edges.append((p.head, x))
-                    for y in p.elements:
-                        all_elems.append(y)
-                pop_list = []
-
-                stack.append(Node(x, all_elems))
+            stack.append((Node(x), i))
 
             should_join = False
 
