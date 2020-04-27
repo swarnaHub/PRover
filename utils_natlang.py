@@ -670,6 +670,7 @@ def convert_examples_to_features_RR(examples,
 
     features = []
     max_size = 0
+    error_tokenization = 0
     for (ex_index, example) in enumerate(examples):
         if ex_index % 10000 == 0:
             logger.info("Writing example %d of %d" % (ex_index, len(examples)))
@@ -679,12 +680,22 @@ def convert_examples_to_features_RR(examples,
         proof_offset = []
         sent_offset = example.sent_offset
         curr_offset = 0
+        is_error = False
         for offset in sent_offset:
             sentence_tokens = tokenizer.tokenize(' '.join(sentences[curr_offset:(offset+1)]))
+            if len(sentence_tokens) == 0:
+                is_error = True
+                error_tokenization += 1
+                break
+            #assert len(sentence_tokens) > 0
             context_tokens.extend(sentence_tokens)
             proof_offset.append(len(context_tokens))
             curr_offset = offset+1
             #proof_offset.append(len(sentence_tokens)) # Uncomment this for the efficient model
+
+        if is_error:
+            print(example.context)
+            continue
         max_size = max(max_size, len(context_tokens))
 
         question_tokens = tokenizer.tokenize(example.question)
@@ -764,6 +775,10 @@ def convert_examples_to_features_RR(examples,
                        edge_label=edge_label,
                        label_id=label_id))
 
+        #if ex_index > 1000:
+        #    break
+
+    print(error_tokenization)
     return features
 
 
