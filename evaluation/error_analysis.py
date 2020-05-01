@@ -62,6 +62,7 @@ def get_gold_proof_nodes_edges(data_dir):
             nrule = meta_record["NRule"]
             #if question["meta"]["QDep"] != 5:
             #    continue
+            #print(question['label'])
             all_node_indices, all_edge_indices = get_node_edge_indices(proofs, sentence_scramble, nfact, nrule)
             gold_proofs.append((all_node_indices, all_edge_indices))
 
@@ -97,7 +98,7 @@ if __name__ == '__main__':
     all_gold_proofs = get_gold_proof_nodes_edges("../data/depth-5")
 
     all_pred_edges = []
-    with open("../output/edge_assignment_identifiers_overall.lst", "r", encoding="utf-8-sig") as f:
+    with open("../output/edge_assignment_identifiers_overall_no_connec.lst", "r", encoding="utf-8-sig") as f:
         lines = f.read().splitlines()
         for line in lines:
             if line == "[]":

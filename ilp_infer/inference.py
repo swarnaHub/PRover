@@ -1,7 +1,7 @@
 from pulp import *
 import numpy as np
 import json
-
+import argparse
 
 def solve_LP(edge_logits, fact_rule_identifier, node_labels):
     prob = LpProblem("Node edge consistency ", LpMaximize)
@@ -154,9 +154,7 @@ def solve_LP(edge_logits, fact_rule_identifier, node_labels):
     return edges
 
 
-def get_fact_rule_identifiers():
-    data_dir = "../data/depth-5"
-    # data_dir = "../data/birds-electricity"
+def get_fact_rule_identifiers(data_dir):
     test_file = os.path.join(data_dir, "test.jsonl")
     meta_test_file = os.path.join(data_dir, "meta-test.jsonl")
 
@@ -179,7 +177,7 @@ def get_fact_rule_identifiers():
                 fact_rule_identifier.append(1)
         fact_rule_identifier.append(0)  # NAF
         for (j, question) in enumerate(record["questions"]):
-            #if question["meta"]["QDep"] != 5:
+            #if question["meta"]["QDep"] != 4:
             #    continue
             fact_rule_identifiers.append(fact_rule_identifier)
 
@@ -187,23 +185,27 @@ def get_fact_rule_identifiers():
 
 
 if __name__ == '__main__':
-    edge_logit_file = open(
-        "../output/best_model/prediction_edge_logits_dev.lst", "r",
-        encoding="utf-8-sig")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--data_dir", default=None, type=str, required=True)
+    parser.add_argument("--node_preds", default=None, type=str, required=True)
+    parser.add_argument("--edge_logits", default=None, type=str, required=True)
+    parser.add_argument("--edge_preds", default=None, type=str, required=True)
+
+    args = parser.parse_args()
+
+    edge_logit_file = open(args.edge_logits, "r", encoding="utf-8-sig")
     edge_logits = edge_logit_file.read().splitlines()
 
-    node_pred_file = open(
-        "../output/best_model/prediction_nodes_dev.lst", "r",
-        encoding="utf-8-sig")
+    node_pred_file = open(args.node_preds, "r", encoding="utf-8-sig")
     node_preds = node_pred_file.read().splitlines()
 
-    fact_rule_identifiers = get_fact_rule_identifiers()
+    fact_rule_identifiers = get_fact_rule_identifiers(args.data_dir)
 
     assert len(edge_logits) == len(node_preds)
     assert len(edge_logits) == len(fact_rule_identifiers)
 
     edge_assignments = []
-    f = open("../output/edge_assignment_identifiers_overall.lst", "w")
+    f = open(args.edge_preds, "w")
     for (i, (edge_logit, node_pred)) in enumerate(zip(edge_logits, node_preds)):
         print(i)
         edge_logit = edge_logit[1:-1].split(", ")

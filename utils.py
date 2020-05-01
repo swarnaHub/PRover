@@ -330,7 +330,7 @@ class RRProcessor(DataProcessor):
 
     def _get_node_edge_label_constrained(self, proofs, sentence_scramble, nfact, nrule):
         proof = proofs.split("OR")[0]
-        # print(proof)
+        #print(proof)
         node_label = [0] * (nfact + nrule + 1)
         edge_label = np.zeros((nfact + nrule + 1, nfact + nrule + 1), dtype=int)
 
@@ -339,7 +339,7 @@ class RRProcessor(DataProcessor):
         else:
             nodes, edges = get_proof_graph(proof)
         # print(nodes)
-        # print(edges)
+        #print(edges)
 
         component_index_map = {}
         for (i, index) in enumerate(sentence_scramble):
@@ -402,7 +402,9 @@ class RRProcessor(DataProcessor):
             sentence_scramble = record["meta"]["sentenceScramble"]
             for (j, question) in enumerate(record["questions"]):
                 # Uncomment to train/evaluate at a certain depth
-                #if question["meta"]["QDep"] != 5:
+                #if question["meta"]["QDep"] != 4:
+                #    continue
+                #if not record["id"].startswith("AttPosElectricityRB4"):
                 #    continue
                 id = question["id"]
                 label = question["label"]

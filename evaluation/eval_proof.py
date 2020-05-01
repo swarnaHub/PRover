@@ -62,7 +62,7 @@ def get_gold_proof_nodes_edges(data_dir):
             nfact = meta_record["NFact"]
             nrule = meta_record["NRule"]
             label = question["label"]
-            #if question["meta"]["QDep"] != 5:
+            #if question["meta"]["QDep"] != 4:
             #    continue
             all_node_indices, all_edge_indices = get_node_edge_indices(proofs, sentence_scramble, nfact, nrule)
             gold_proofs.append((all_node_indices, all_edge_indices))
