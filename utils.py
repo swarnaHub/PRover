@@ -219,69 +219,7 @@ class RRProcessor(DataProcessor):
     def get_labels(self):
         return [True, False]
 
-    def _get_node_edge_label(self, proofs, sentence_scramble, nfact, nrule):
-        proof = proofs.split("OR")[0]
-        #print(proof)
-        node_label = [0] * (nfact + nrule + 1)
-        edge_label = np.zeros((nfact+nrule+1, nfact+nrule+1), dtype=int)
-
-        if "FAIL" in proof:
-            nodes, edges = get_proof_graph_with_fail(proof)
-        else:
-            nodes, edges = get_proof_graph(proof)
-        #print(nodes)
-        #print(edges)
-
-        component_index_map = {}
-        for (i, index) in enumerate(sentence_scramble):
-            if index <= nfact:
-                component = "triple" + str(index)
-            else:
-                component = "rule" + str(index-nfact)
-            component_index_map[component] = i
-
-        for node in nodes:
-            if node != "NAF":
-                index = component_index_map[node]
-            else:
-                index = nfact+nrule
-            node_label[index] = 1
-
-        edges = list(set(edges))
-        for edge in edges:
-            if edge[0] != "NAF":
-                start_index = component_index_map[edge[0]]
-            else:
-                start_index = nfact+nrule
-            if edge[1] != "NAF":
-                end_index = component_index_map[edge[1]]
-            else:
-                end_index = nfact+nrule
-
-            if start_index < end_index:
-                # No cycle possible, hence should not be set before
-                if edge_label[start_index][end_index] != 0:
-                    print("here")
-                edge_label[start_index][end_index] = 1
-            else:
-                if edge_label[end_index][start_index] != 0:
-                    print("here")
-                edge_label[end_index][start_index] = 2
-
-        # Set lower triangle labels to -100
-        edge_label[np.tril_indices((nfact+nrule+1), 0)] = -100
-
-        # Set edges to irrelevant nodes to -100
-        '''
-        for start_index in range(len(node_label)):
-            for end_index in range(len(node_label)):
-                if start_index < end_index and (node_label[start_index] == 0 or node_label[end_index] == 0):
-                    edge_label[start_index][end_index] = -100
-        '''
-
-        return node_label, list(edge_label.flatten())
-
-    def _get_node_edge_label_with_cycle(self, proofs, sentence_scramble, nfact, nrule):
+    def _get_node_edge_label_unconstrained(self, proofs, sentence_scramble, nfact, nrule):
         proof = proofs.split("OR")[0]
         #print(proof)
         node_label = [0] * (nfact + nrule + 1)
@@ -321,10 +259,6 @@ class RRProcessor(DataProcessor):
                 end_index = nfact+nrule
 
             edge_label[start_index][end_index] = 1
-
-        # Ignore diagonal
-        for i in range(len(edge_label)):
-            edge_label[i][i] = -100
 
         return node_label, list(edge_label.flatten())
 
