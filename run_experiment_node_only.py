@@ -1,26 +1,3 @@
-# coding=utf-8
-
-# Copyright 2019 Allen Institute for Artificial Intelligence
-# This code was copied from (https://github.com/huggingface/transformers/blob/master/examples/run_glue.py)
-# and amended by AI2. All modifications are licensed under Apache 2.0 as is the original code. See below for the original license:
-
-# Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
-# Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-""" Finetuning BERT/RoBERTa models on WinoGrande. """
-
 from __future__ import absolute_import, division, print_function
 
 import argparse
@@ -53,11 +30,9 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
 from pytorch_transformers import AdamW, WarmupLinearSchedule
 
 from model import RobertaForRRWithNodeLoss, RobertaForMultipleChoice
-from utils import (compute_metrics, compute_sequence_metrics, compute_graph_metrics, convert_examples_to_features,
+from utils import (compute_metrics,
                    output_modes, processors,
                    convert_examples_to_features_RR)
-
-from nltk.tokenize import sent_tokenize
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +41,6 @@ ALL_MODELS = sum(
     ())
 
 MODEL_CLASSES = {
-    'bert': (BertConfig, BertForSequenceClassification, BertTokenizer),
-    'bert_mc': (BertConfig, BertForMultipleChoice, BertTokenizer),
-    'xlnet': (XLNetConfig, XLNetForSequenceClassification, XLNetTokenizer),
-    'xlm': (XLMConfig, XLMForSequenceClassification, XLMTokenizer),
-    'roberta': (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
-    'roberta_mc': (RobertaConfig, RobertaForMultipleChoice, RobertaTokenizer),
     'roberta_rr': (RobertaConfig, RobertaForRRWithNodeLoss, RobertaTokenizer)
 }
 

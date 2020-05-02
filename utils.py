@@ -1,27 +1,3 @@
-# coding=utf-8
-
-# Copyright 2019 Allen Institute for Artificial Intelligence
-# This code was copied from (https://github.com/huggingface/transformers/blob/master/examples/utils_glue.py)
-# and amended by AI2. All modifications are licensed under Apache 2.0 as is the original code. See below for the original license:
-
-
-# Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
-# Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-""" Utility for finetuning BERT/RoBERTa models on WinoGrande. """
-
 from __future__ import absolute_import, division, print_function
 
 import csv
@@ -743,41 +719,6 @@ def compute_metrics(task_name, preds, labels):
     else:
         raise KeyError(task_name)
 
-def compute_sequence_metrics(task_name, sequence_preds, sequence_labels):
-    assert len(sequence_preds) == len(sequence_labels)
-    overall_precision, overall_recall, overall_f1 = 0.0, 0.0, 0.0
-    all_correct = 0
-    for i in range(len(sequence_labels)):
-        gold_positive, pred_positive, correct_positive = 0, 0, 0
-        j = 0
-        for j in range(len(sequence_labels[i])):
-            if sequence_labels[i][j] == -100: # Ignore index, so copy it
-                sequence_preds[i][j] = -100
-                continue
-            if sequence_labels[i][j] == sequence_preds[i][j] and sequence_labels[i][j] == 1:
-                correct_positive += 1
-            if sequence_labels[i][j] == 1:
-                gold_positive += 1
-            if sequence_preds[i][j] == 1:
-                pred_positive += 1
-
-        precision = correct_positive/pred_positive if pred_positive > 0 else 1.0
-        recall = correct_positive/gold_positive if gold_positive > 0 else 1.0
-
-        overall_precision += precision
-        overall_recall += recall
-        if precision + recall > 0:
-            overall_f1 += 2*precision*recall/(precision + recall)
-        # If they match exactly, then it's fully correct
-        if np.array_equal(sequence_labels[i], sequence_preds[i]):
-            all_correct += 1
-
-    overall_precision /= len(sequence_labels)
-    overall_recall /= len(sequence_labels)
-    overall_f1 /= len(sequence_labels)
-    correct_accuracy = all_correct/len(sequence_labels)
-
-    return {"node_prec": overall_precision, "node_recall": overall_recall, "node_f1": overall_f1, "node_acc": correct_accuracy}
 
 def compute_graph_metrics(task_name, node_preds, out_node_label_ids, edge_preds, out_edge_label_ids):
     assert len(node_preds) == len(out_node_label_ids)
@@ -807,52 +748,6 @@ def compute_graph_metrics(task_name, node_preds, out_node_label_ids, edge_preds,
     return {"node_acc": correct_node/len(node_preds),
             "edge_acc": correct_edge/len(edge_preds),
             "graph_acc": correct_graph/len(edge_preds)}
-
-def compute_graph_metrics_node_based(task_name, node_preds, out_node_label_ids, edge_preds, out_edge_label_ids):
-    assert len(node_preds) == len(out_node_label_ids)
-    assert len(edge_preds) == len(out_edge_label_ids)
-    assert len(node_preds) == len(edge_preds)
-    correct_node, correct_edge, correct_graph = 0, 0, 0
-    for i in range(len(out_node_label_ids)):
-        node_pred_ids = []
-        count_valid_nodes = 0
-        for j in range(len(out_node_label_ids[i])):
-            if out_node_label_ids[i][j] == -100: # Ignore index, so copy it
-                node_preds[i][j] = -100
-                continue
-            else:
-                count_valid_nodes += 1
-                if node_preds[i][j] == 1:
-                    node_pred_ids.append(j)
-
-        invalid_edges_start = count_valid_nodes*count_valid_nodes
-        for j in range(len(out_edge_label_ids[i])):
-            row = int(j/count_valid_nodes)
-            col = j % count_valid_nodes
-            # Invalid cases
-            if j >= invalid_edges_start:
-                edge_preds[i][j] = -100
-            # Lower triangle
-            elif row >= col:
-                edge_preds[i][j] = -100
-            # Edges to nodes not part of node prediction, so can be ignored
-            elif row not in node_pred_ids or col not in node_pred_ids:
-                edge_preds[i][j] = out_edge_label_ids[i][j]
-
-        # If they match exactly, then it's fully correct
-        if np.array_equal(out_node_label_ids[i], node_preds[i]):
-            correct_node += 1
-
-        if np.array_equal(out_edge_label_ids[i], edge_preds[i]):
-            correct_edge += 1
-
-        if np.array_equal(out_node_label_ids[i], node_preds[i]) and np.array_equal(out_edge_label_ids[i], edge_preds[i]):
-            correct_graph += 1
-
-    return {"node_acc": correct_node/len(node_preds),
-            "edge_acc": correct_edge/len(edge_preds),
-            "graph_acc": correct_edge/len(edge_preds)}
-
 
 processors = {
     "rr": RRProcessor,

@@ -1,27 +1,3 @@
-# coding=utf-8
-
-# Copyright 2019 Allen Institute for Artificial Intelligence
-# This code was copied from (https://github.com/huggingface/transformers/blob/master/examples/utils_glue.py)
-# and amended by AI2. All modifications are licensed under Apache 2.0 as is the original code. See below for the original license:
-
-
-# Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
-# Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-""" Utility for finetuning BERT/RoBERTa models on WinoGrande. """
-
 from __future__ import absolute_import, division, print_function
 
 import csv
@@ -62,13 +38,6 @@ class InputExample(object):
         self.text_b = text_b
         self.label = label
 
-class RRInputExampleQA(object):
-    def __init__(self, id, context, question, label):
-        self.id = id
-        self.context = context
-        self.question = question
-        self.label = label
-
 class RRInputExample(object):
     def __init__(self, id, context, sent_offset, question, node_label, edge_label, label):
         self.id = id
@@ -84,14 +53,6 @@ class InputFeatures(object):
     """A single set of features of data."""
 
     def __init__(self, input_ids, input_mask, segment_ids, label_id):
-        self.input_ids = input_ids
-        self.input_mask = input_mask
-        self.segment_ids = segment_ids
-        self.label_id = label_id
-
-class RRFeaturesQA(object):
-    def __init__(self, id, input_ids, input_mask, segment_ids, label_id):
-        self.id = id
         self.input_ids = input_ids
         self.input_mask = input_mask
         self.segment_ids = segment_ids
@@ -149,79 +110,23 @@ class DataProcessor(object):
                 records.append(json.loads(line))
             return records
 
-class RRProcessorQA(DataProcessor):
-    def get_train_examples(self, data_dir):
-        return self._create_examples(
-            self._read_jsonl(os.path.join(data_dir, "train.jsonl")),
-            self._read_jsonl(os.path.join(data_dir, "meta-train.jsonl")))
-
-    def get_dev_examples(self, data_dir):
-        return self._create_examples(
-            self._read_jsonl(os.path.join(data_dir, "test.jsonl")),
-            self._read_jsonl(os.path.join(data_dir, "meta-test.jsonl")))
-        '''
-        return self._create_examples_leave_one_out(
-            self._read_jsonl(os.path.join(data_dir, "leave-one-out.jsonl"))
-        )
-        '''
-
-    def get_test_examples(self, data_dir):
-        return self._create_examples(
-            self._read_jsonl(os.path.join(data_dir, "test.jsonl")),
-            self._read_jsonl(os.path.join(data_dir, "meta-test.jsonl")))
-
-    def get_labels(self):
-        return [True, False]
-
-    def _create_examples(self, records, meta_records):
-        examples = []
-        for (i, (record, meta_record)) in enumerate(zip(records, meta_records)):
-            print(i)
-            assert record["id"] == meta_record["id"]
-            context = record["context"]
-            for (j, question) in enumerate(record["questions"]):
-                id = question["id"]
-                label = question["label"]
-                meta_data = meta_record["questions"]["Q" + str(j + 1)]
-                proofs = meta_data["proofs"]
-                #if "CWA" in proofs:
-                #    continue
-                #if question["meta"]["QDep"] != 3:
-                #    continue
-                question = question["text"]
-
-                examples.append(RRInputExampleQA(id, context, question, label))
-
-        return examples
-
-    def _create_examples_leave_one_out(self, records):
-        examples = []
-        for record in records:
-            examples.append(RRInputExampleQA(record["id"], record["context"], record["question"], record["label"]))
-
-        return examples
-
-
 class RRProcessor(DataProcessor):
     def get_train_examples(self, data_dir):
-        return self._create_examples("train",
-            self._read_jsonl(os.path.join(data_dir, "train.jsonl")),
-            self._read_jsonl(os.path.join(data_dir, "meta-train.jsonl")))
+        natlang_mappings = self._get_natlang_mappings(os.path.join(data_dir, "turk-questions-train-mappings.tsv"))
+        return self._create_examples(self._read_jsonl(os.path.join(data_dir, "train.jsonl")),
+            self._read_jsonl(os.path.join(data_dir, "meta-train.jsonl")),
+            natlang_mappings)
 
     def get_dev_examples(self, data_dir):
-        return self._create_examples("dev",
-            self._read_jsonl(os.path.join(data_dir, "test.jsonl")),
-            self._read_jsonl(os.path.join(data_dir, "meta-test.jsonl")))
-
-    def get_test_examples(self, data_dir):
-        return self._create_examples("test",
-            self._read_jsonl(os.path.join(data_dir, "test.jsonl")),
-            self._read_jsonl(os.path.join(data_dir, "meta-test.jsonl")))
+        natlang_mappings = self._get_natlang_mappings(os.path.join(data_dir, "turk-questions-test-mappings.tsv"))
+        return self._create_examples(self._read_jsonl(os.path.join(data_dir, "test.jsonl")),
+            self._read_jsonl(os.path.join(data_dir, "meta-test.jsonl")),
+            natlang_mappings)
 
     def get_labels(self):
         return [True, False]
 
-    def _get_node_edge_label_normal(self, proofs, sentence_scramble, nfact, nrule):
+    def _get_node_edge_label_no_natlang(self, proofs, sentence_scramble, nfact, nrule):
         proof = proofs.split("OR")[0]
         # print(proof)
         node_label = [0] * (nfact + nrule + 1)
@@ -285,12 +190,7 @@ class RRProcessor(DataProcessor):
 
         return node_label, list(edge_label.flatten())
 
-    def _get_natlang_mappings(self, split):
-        if split == "train":
-            natlang_metadata = "./data/turk-questions-train-mappings.tsv"
-        else:
-            natlang_metadata = "./data/turk-questions-test-mappings.tsv"
-
+    def _get_natlang_mappings(self, natlang_metadata):
         natlang_mappings = OrderedDict()
         with open(natlang_metadata, "r", encoding="utf-8-sig") as f:
             lines = f.read().splitlines()
@@ -373,8 +273,7 @@ class RRProcessor(DataProcessor):
 
         return node_label, list(edge_label.flatten())
 
-    def _create_examples(self, split, records, meta_records):
-        natlang_mappings = self._get_natlang_mappings(split)
+    def _create_examples(self, records, meta_records, natlang_mappings):
         meta_record_mappings = {}
         for meta_record in meta_records:
             meta_record_mappings[meta_record["id"]] = meta_record
@@ -403,7 +302,8 @@ class RRProcessor(DataProcessor):
                 nfact = meta_record["NFact"]
                 nrule = meta_record["NRule"]
                 if "NatLang" not in id:
-                    node_label, edge_label = self._get_node_edge_label_normal(proofs, sentence_scramble, nfact, nrule)
+                    continue
+                    node_label, edge_label = self._get_node_edge_label_no_natlang(proofs, sentence_scramble, nfact, nrule)
                     sent_offset = [k for k in range(len(node_label)-1)]
                 else:
                     node_label, edge_label = self._get_node_edge_label_natlang(id, proofs, natlang_mappings)
@@ -548,103 +448,6 @@ def convert_examples_to_features(examples,
                           input_mask=input_mask,
                           segment_ids=segment_ids,
                           label_id=label_id))
-    return features
-
-def convert_examples_to_features_RR_QA(examples,
-                                 label_list,
-                                 max_seq_length,
-                                 tokenizer,
-                                 output_mode,
-                                 cls_token_at_end=False,
-                                 pad_on_left=False,
-                                 cls_token='[CLS]',
-                                 sep_token='[SEP]',
-                                 sep_token_extra=False,
-                                 pad_token=0,
-                                 sequence_a_segment_id=0,
-                                 sequence_b_segment_id=1,
-                                 cls_token_segment_id=1,
-                                 pad_token_segment_id=0,
-                                 mask_padding_with_zero=True):
-
-    label_map = {label : i for i, label in enumerate(label_list)}
-
-    features = []
-    max_size = 0
-    for (ex_index, example) in enumerate(examples):
-        if ex_index % 10000 == 0:
-            logger.info("Writing example %d of %d" % (ex_index, len(examples)))
-
-        sentences = sent_tokenize(example.context)
-        context_tokens = tokenizer.tokenize(example.context)
-        '''
-        for sentence in sentences:
-            sentence_tokens = tokenizer.tokenize(sentence)
-            context_tokens.extend(sentence_tokens)
-        '''
-        max_size = max(max_size, len(context_tokens))
-
-        question_tokens = tokenizer.tokenize(example.question)
-
-        special_tokens_count = 3 if sep_token_extra else 2
-        _truncate_seq_pair(context_tokens, question_tokens, max_seq_length - special_tokens_count - 1)
-
-        tokens = context_tokens + [sep_token]
-        if sep_token_extra:
-            # roberta uses an extra separator b/w pairs of sentences
-            tokens += [sep_token]
-        segment_ids = [sequence_a_segment_id] * len(tokens)
-
-        tokens += question_tokens + [sep_token]
-        segment_ids += [sequence_b_segment_id] * (len(question_tokens) + 1)
-
-        if cls_token_at_end:
-            tokens = tokens + [cls_token]
-            segment_ids = segment_ids + [cls_token_segment_id]
-        else:
-            tokens = [cls_token] + tokens
-            segment_ids = [cls_token_segment_id] + segment_ids
-
-        input_ids = tokenizer.convert_tokens_to_ids(tokens)
-
-        # The mask has 1 for real tokens and 0 for padding tokens. Only real
-        # tokens are attended to.
-        input_mask = [1 if mask_padding_with_zero else 0] * len(input_ids)
-
-        # Zero-pad up to the sequence length.
-        padding_length = max_seq_length - len(input_ids)
-        if pad_on_left:
-            input_ids = ([pad_token] * padding_length) + input_ids
-            input_mask = ([0 if mask_padding_with_zero else 1] * padding_length) + input_mask
-            segment_ids = ([pad_token_segment_id] * padding_length) + segment_ids
-        else:
-            input_ids = input_ids + ([pad_token] * padding_length)
-            input_mask = input_mask + ([0 if mask_padding_with_zero else 1] * padding_length)
-            segment_ids = segment_ids + ([pad_token_segment_id] * padding_length)
-
-        assert len(input_ids) == max_seq_length
-        assert len(input_mask) == max_seq_length
-        assert len(segment_ids) == max_seq_length
-
-        label_id = label_map[example.label]
-
-        if ex_index < 5:
-            logger.info("*** Example ***")
-            logger.info("id: %s" % (example.id))
-            logger.info("tokens: %s" % " ".join(
-                [str(x) for x in tokens]))
-            logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-            logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
-            logger.info("segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
-            logger.info("label: %s (id = %d)" % (example.label, label_id))
-
-        features.append(
-            RRFeaturesQA(id=id,
-                       input_ids=input_ids,
-                       input_mask=input_mask,
-                       segment_ids=segment_ids,
-                       label_id=label_id))
-
     return features
 
 def convert_examples_to_features_RR(examples,
@@ -829,42 +632,6 @@ def compute_metrics(task_name, preds, labels):
     else:
         raise KeyError(task_name)
 
-def compute_sequence_metrics(task_name, sequence_preds, sequence_labels):
-    assert len(sequence_preds) == len(sequence_labels)
-    overall_precision, overall_recall, overall_f1 = 0.0, 0.0, 0.0
-    all_correct = 0
-    for i in range(len(sequence_labels)):
-        gold_positive, pred_positive, correct_positive = 0, 0, 0
-        j = 0
-        for j in range(len(sequence_labels[i])):
-            if sequence_labels[i][j] == -100: # Ignore index, so copy it
-                sequence_preds[i][j] = -100
-                continue
-            if sequence_labels[i][j] == sequence_preds[i][j] and sequence_labels[i][j] == 1:
-                correct_positive += 1
-            if sequence_labels[i][j] == 1:
-                gold_positive += 1
-            if sequence_preds[i][j] == 1:
-                pred_positive += 1
-
-        precision = correct_positive/pred_positive if pred_positive > 0 else 1.0
-        recall = correct_positive/gold_positive if gold_positive > 0 else 1.0
-
-        overall_precision += precision
-        overall_recall += recall
-        if precision + recall > 0:
-            overall_f1 += 2*precision*recall/(precision + recall)
-        # If they match exactly, then it's fully correct
-        if np.array_equal(sequence_labels[i], sequence_preds[i]):
-            all_correct += 1
-
-    overall_precision /= len(sequence_labels)
-    overall_recall /= len(sequence_labels)
-    overall_f1 /= len(sequence_labels)
-    correct_accuracy = all_correct/len(sequence_labels)
-
-    return {"node_prec": overall_precision, "node_recall": overall_recall, "node_f1": overall_f1, "node_acc": correct_accuracy}
-
 def compute_graph_metrics(task_name, node_preds, out_node_label_ids, edge_preds, out_edge_label_ids):
     assert len(node_preds) == len(out_node_label_ids)
     assert len(edge_preds) == len(out_edge_label_ids)
@@ -941,16 +708,13 @@ def compute_graph_metrics_node_based(task_name, node_preds, out_node_label_ids, 
 
 
 processors = {
-    "rr": RRProcessor,
-    "rr_qa": RRProcessorQA
+    "rr": RRProcessor
 }
 
 output_modes = {
-    "rr": "classification",
-    "rr_qa": "classification"
+    "rr": "classification"
 }
 
 GLUE_TASKS_NUM_LABELS = {
-    "rr": 2,
-    "rr_qa": 2
+    "rr": 2
 }

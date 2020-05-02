@@ -1,26 +1,3 @@
-# coding=utf-8
-
-# Copyright 2019 Allen Institute for Artificial Intelligence
-# This code was copied from (https://github.com/huggingface/transformers/blob/master/examples/run_glue.py)
-# and amended by AI2. All modifications are licensed under Apache 2.0 as is the original code. See below for the original license:
-
-# Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
-# Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
-""" Finetuning BERT/RoBERTa models on WinoGrande. """
-
 from __future__ import absolute_import, division, print_function
 
 import argparse
@@ -52,12 +29,11 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
 
 from pytorch_transformers import AdamW, WarmupLinearSchedule
 
-from model import RobertaForRRWithNodeEdgeLoss, RobertaForMultipleChoice
-from utils_natlang import (compute_metrics, compute_sequence_metrics, compute_graph_metrics, convert_examples_to_features,
+from model import RobertaForRRWithNodeEdgeLoss
+from utils_natlang import (compute_metrics, compute_graph_metrics,
                    output_modes, processors,
                    convert_examples_to_features_RR)
 
-from nltk.tokenize import sent_tokenize
 
 logger = logging.getLogger(__name__)
 
@@ -66,12 +42,6 @@ ALL_MODELS = sum(
     ())
 
 MODEL_CLASSES = {
-    'bert': (BertConfig, BertForSequenceClassification, BertTokenizer),
-    'bert_mc': (BertConfig, BertForMultipleChoice, BertTokenizer),
-    'xlnet': (XLNetConfig, XLNetForSequenceClassification, XLNetTokenizer),
-    'xlm': (XLMConfig, XLMForSequenceClassification, XLMTokenizer),
-    'roberta': (RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer),
-    'roberta_mc': (RobertaConfig, RobertaForMultipleChoice, RobertaTokenizer),
     'roberta_rr': (RobertaConfig, RobertaForRRWithNodeEdgeLoss, RobertaTokenizer)
 }
 
@@ -349,71 +319,13 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
             for edge_pred in edge_preds:
                 writer.write(str(list(edge_pred)) + "\n")
 
-        # prediction edges
+        # prediction edge logits
         output_edge_pred_file = os.path.join(eval_output_dir, "prediction_edge_logits_{}.lst".format(eval_split))
         with open(output_edge_pred_file, "w") as writer:
             logger.info("***** Write predictions {} on {} *****".format(prefix, eval_split))
             for edge_pred_logit in edge_pred_logits:
                 writer.write(str(list(edge_pred_logit)) + "\n")
 
-        '''
-        # prediction proofs
-        output_proof_pred_file = os.path.join(eval_output_dir, "prediction_graphs_{}.lst".format(eval_split))
-        with open(output_proof_pred_file, "w") as writer:
-            logger.info("***** Write predictions {} on {} *****".format(prefix, eval_split))
-            for (ex_index, example) in enumerate(examples):
-                writer.write(example.context + "\n")
-                writer.write(example.question + "\n")
-                gold_proof = out_node_label_ids[ex_index]
-                gold_proof = gold_proof[np.where(gold_proof != -100)[0]]
-                pred_proof = node_preds[ex_index][:len(gold_proof)]
-                writer.write("Correct" + "\n") if np.array_equal(gold_proof, pred_proof) else writer.write(
-                    "Incorrect\n")
-                writer.write(str(gold_proof) + "\n")
-                writer.write(str(pred_proof) + "\n")
-
-                facts_rules = sent_tokenize(example.context)
-                assert len(gold_proof) == len(facts_rules) + 1
-                for index in range(len(gold_proof)):
-                    if gold_proof[index] == 1:
-                        if index == len(gold_proof) - 1:
-                            writer.write("NAF")
-                        else:
-                            writer.write(facts_rules[index].strip())
-
-                writer.write("\n")
-                for index in range(len(pred_proof)):
-                    if pred_proof[index] == 1:
-                        if index == len(pred_proof) - 1:
-                            writer.write("NAF")
-                        else:
-                            writer.write(facts_rules[index].strip())
-
-                writer.write("\n")
-
-                writer.write(str(np.where(gold_proof == 1)[0]) + "\n")
-                writer.write(str(np.where(pred_proof == 1)[0]) + "\n")
-
-                gold_edge = out_edge_label_ids[ex_index][:(len(gold_proof)*len(gold_proof))]
-                pred_edge = edge_preds[ex_index][:len(gold_edge)]
-                gold_edge = gold_edge.reshape(-1, len(gold_proof))
-                pred_edge = pred_edge.reshape(-1, len(gold_proof))
-
-                gold_edge1 = np.where(gold_edge == 1)
-                gold_edge2 = (np.where(gold_edge == 2)[1], np.where(gold_edge == 2)[0])
-
-                writer.write(str(list(gold_edge1[0]) + list(gold_edge2[0])) + "\n")
-                writer.write(str(list(gold_edge1[1]) + list(gold_edge2[1])) + "\n")
-
-                pred_edge1 = np.where(pred_edge == 1)
-                pred_edge2 = (np.where(pred_edge == 2)[1], np.where(pred_edge == 2)[0])
-
-                writer.write(str(list(pred_edge1[0]) + list(pred_edge2[0])) + "\n")
-                writer.write(str(list(pred_edge1[1]) + list(pred_edge2[1])) + "\n")
-
-
-                writer.write("\n\n")
-        '''
 
     return results
 

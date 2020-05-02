@@ -89,40 +89,15 @@ if __name__ == '__main__':
     print("Num samples = " + str(len(all_gold_proofs)))
 
     correct_nodes = 0
-    macro_precision_nodes = 0
-    macro_recall_nodes = 0
     for (i, gold_proofs) in enumerate(all_gold_proofs):
         gold_nodes = gold_proofs[0]
         pred_node = all_pred_nodes[i]
 
         best_common_node = 0
-        best_pred_node = 0
-        best_gold_node = 0
         for (j, gold_node) in enumerate(gold_nodes):
             if set(gold_node) == set(pred_node):
                 correct_nodes += 1
                 break
-            common_node = len(list(set(gold_node) & set(pred_node)))
-            if common_node > best_common_node:
-                best_common_node = common_node
-                best_pred_node = len(pred_node)
-                best_gold_node = len(gold_node)
-
-        if best_pred_node > 0:
-            macro_precision_nodes += best_common_node/best_pred_node
-        else:
-            macro_precision_nodes += 1.0
-        if best_gold_node > 0:
-            macro_recall_nodes += best_common_node/best_gold_node
-        else:
-            macro_recall_nodes += 1.0
 
 
     print("Node accuracy = " + str(correct_nodes/len(all_gold_proofs)))
-
-    macro_precision_nodes /= len(all_gold_proofs)
-    macro_recall_nodes /= len(all_gold_proofs)
-    f1_nodes = 2 * macro_precision_nodes * macro_recall_nodes / (macro_precision_nodes + macro_recall_nodes)
-    print("Macro precision nodes = " + str(macro_precision_nodes))
-    print("Macro recall nodes = " + str(macro_recall_nodes))
-    print("F1 nodes = " + str(f1_nodes))

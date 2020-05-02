@@ -117,8 +117,6 @@ if __name__ == '__main__':
     correct_edges = 0
     correct_proofs = 0
     correct_samples = 0
-    macro_precision_nodes, macro_precision_edges = 0, 0
-    macro_recall_nodes, macro_recall_edges = 0, 0
     for (i, gold_proofs) in enumerate(all_gold_proofs):
         is_correct_qa = False
         if str(all_gold_labels[i]) == all_pred_labels[i]:
@@ -141,15 +139,6 @@ if __name__ == '__main__':
                 best_pred_node = len(pred_node)
                 best_gold_node = len(gold_node)
 
-        if best_pred_node > 0:
-            macro_precision_nodes += best_common_node/best_pred_node
-        else:
-            macro_precision_nodes += 1.0
-        if best_gold_node > 0:
-            macro_recall_nodes += best_common_node/best_gold_node
-        else:
-            macro_recall_nodes += 1.0
-
         best_common_edge = 0
         best_pred_edge = 0
         best_gold_edge = 0
@@ -165,15 +154,6 @@ if __name__ == '__main__':
                 best_common_edge = common_edge
                 best_pred_edge = len(pred_edge)
                 best_gold_edge = len(gold_edge)
-
-        if best_pred_edge > 0:
-            macro_precision_edges += best_common_edge/best_pred_edge
-        else:
-            macro_precision_edges += 1.0
-        if best_gold_edge > 0:
-            macro_recall_edges += best_common_edge/best_gold_edge
-        else:
-            macro_recall_edges += 1.0
 
         is_correct_proof = False
         for (j, (gold_node, gold_edge)) in enumerate(zip(gold_nodes, gold_edges)):
@@ -196,19 +176,5 @@ if __name__ == '__main__':
     print("Edge accuracy = " + str(correct_edges / len(all_gold_proofs)))
     print("Proof accuracy = " + str(correct_proofs / len(all_gold_proofs)))
     print("Full accuracy = " + str(correct_samples / len(all_gold_proofs)))
-    print("QA accuracy among correct proofs = " + str(correct_samples / correct_proofs))
 
-    macro_precision_nodes /= len(all_gold_proofs)
-    macro_recall_nodes /= len(all_gold_proofs)
-    f1_nodes = 2 * macro_precision_nodes * macro_recall_nodes / (macro_precision_nodes + macro_recall_nodes)
-    print("Macro precision nodes = " + str(macro_precision_nodes))
-    print("Macro recall nodes = " + str(macro_recall_nodes))
-    print("F1 nodes = " + str(f1_nodes))
-
-    macro_precision_edges /= len(all_gold_proofs)
-    macro_recall_edges /= len(all_gold_proofs)
-    f1_edges = 2*macro_precision_edges*macro_recall_edges/(macro_precision_edges+macro_recall_edges)
-    print("Macro precision edges = " + str(macro_precision_edges))
-    print("Macro recall edges = " + str(macro_recall_edges))
-    print("F1 edges = " + str(f1_edges))
 
