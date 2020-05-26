@@ -34,8 +34,8 @@ def filter_context(context):
     return False
 
 def get_fact_rule_identifiers(data_dir, natlang_metadata):
-    test_file = os.path.join(data_dir, "test.jsonl")
-    meta_test_file = os.path.join(data_dir, "meta-test.jsonl")
+    test_file = os.path.join(data_dir, "dev.jsonl")
+    meta_test_file = os.path.join(data_dir, "meta-dev.jsonl")
 
     f1 = open(test_file, "r", encoding="utf-8-sig")
     f2 = open(meta_test_file, "r", encoding="utf-8-sig")
@@ -56,9 +56,11 @@ def get_fact_rule_identifiers(data_dir, natlang_metadata):
         if filter_context(context):
             continue
         for (j, question) in enumerate(record["questions"]):
-            #if question["meta"]["QDep"] != 3:
+            #if question["meta"]["QDep"] != 5:
             #    continue
             id = question["id"]
+            if "NatLang" not in id:
+                continue
             meta_data = meta_record["questions"]["Q" + str(j + 1)]
 
             question = question["text"]

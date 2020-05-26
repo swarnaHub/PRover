@@ -3,6 +3,45 @@ import numpy as np
 import json
 import argparse
 
+def solve_LP_unconstrained(edge_logits):
+    prob = LpProblem("Node edge consistency ", LpMaximize)
+    all_vars = {}
+
+    # Optimization Problem
+    opt_prob = None
+    for i in range(len(edge_logits)):
+        for j in range(len(edge_logits)):
+            var0 = LpVariable("Edge_" + str(i + 1) + "_" + str(j + 1) + "_0", 0, 1, LpInteger)
+            var1 = LpVariable("Edge_" + str(i + 1) + "_" + str(j + 1) + "_1", 0, 1, LpInteger)
+
+            all_vars[(i, j, 0)] = var0
+            all_vars[(i, j, 1)] = var1
+
+            if opt_prob is None:
+                opt_prob = (1 - edge_logits[i][j]) * all_vars[(i, j, 0)] + edge_logits[i][j] * all_vars[(i, j, 1)]
+            else:
+                opt_prob += (1 - edge_logits[i][j]) * all_vars[(i, j, 0)] + edge_logits[i][j] * all_vars[(i, j, 1)]
+
+    prob += opt_prob, "Maximum Score"
+
+    # An edge is either present or absent
+    for i in range(len(edge_logits)):
+        for j in range(len(edge_logits)):
+            prob += all_vars[(i, j, 0)] + all_vars[(i, j, 1)] == 1, "Exist condition" + str(i) + "_" + str(j)
+
+    prob.solve()
+
+    edges = []
+    for v in prob.variables():
+        if v.varValue > 0 and v.name.endswith("1") and v.name.startswith("Edge"):
+            name = v.name.split("_")
+            n_i = int(name[1]) - 1
+            n_j = int(name[2]) - 1
+            edges.append((n_i, n_j))
+    print("Max score = ", value(prob.objective))
+
+    return edges
+
 def solve_LP(edge_logits, fact_rule_identifier, node_labels):
     prob = LpProblem("Node edge consistency ", LpMaximize)
     all_vars = {}
@@ -46,7 +85,7 @@ def solve_LP(edge_logits, fact_rule_identifier, node_labels):
         C[(temp, sink_id)] = 1
         C[(sink_id, temp)] = 0
 
-    # capacities inside graph are infinite or say 100 in this case, except self loops and if the edge is not possible
+    # capacities inside graph are infinite or say 1000 in this case, except self loops and if the edge is not possible
     arcs = set()
     for i in range(len(edge_logits)):
         for j in range(len(edge_logits)):
@@ -155,8 +194,8 @@ def solve_LP(edge_logits, fact_rule_identifier, node_labels):
 
 
 def get_fact_rule_identifiers(data_dir):
-    test_file = os.path.join(data_dir, "test.jsonl")
-    meta_test_file = os.path.join(data_dir, "meta-test.jsonl")
+    test_file = os.path.join(data_dir, "dev.jsonl")
+    meta_test_file = os.path.join(data_dir, "meta-dev.jsonl")
 
     f1 = open(test_file, "r", encoding="utf-8-sig")
     f2 = open(meta_test_file, "r", encoding="utf-8-sig")
@@ -177,7 +216,7 @@ def get_fact_rule_identifiers(data_dir):
                 fact_rule_identifier.append(1)
         fact_rule_identifier.append(0)  # NAF
         for (j, question) in enumerate(record["questions"]):
-            #if question["meta"]["QDep"] != 4:
+            #if question["meta"]["QDep"] != 5:
             #    continue
             fact_rule_identifiers.append(fact_rule_identifier)
 
@@ -219,6 +258,8 @@ if __name__ == '__main__':
         edge_logit = np.array(edge_logit).reshape(len(node_pred), len(node_pred))
 
         edges = solve_LP(edge_logit, fact_rule_identifiers[i], node_pred)
+        # Use this for unconstrained inference -- maximizes only the edge logits
+        #edges = solve_LP_unconstrained(edge_logit)
 
         print(edges)
         f.write(str(edges))

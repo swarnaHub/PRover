@@ -7,16 +7,12 @@ import sys
 from io import open
 from collections import OrderedDict
 
-from scipy.stats import pearsonr, spearmanr
-from sklearn.metrics import matthews_corrcoef, f1_score
 import json
 from nltk.tokenize import sent_tokenize
 import numpy as np
-
 from proof_utils import get_proof_graph, get_proof_graph_with_fail
 
 logger = logging.getLogger(__name__)
-
 
 class InputExample(object):
     """A single training/test example for simple sequence classification."""
@@ -118,9 +114,9 @@ class RRProcessor(DataProcessor):
             natlang_mappings)
 
     def get_dev_examples(self, data_dir):
-        natlang_mappings = self._get_natlang_mappings(os.path.join(data_dir, "turk-questions-test-mappings.tsv"))
-        return self._create_examples(self._read_jsonl(os.path.join(data_dir, "test.jsonl")),
-            self._read_jsonl(os.path.join(data_dir, "meta-test.jsonl")),
+        natlang_mappings = self._get_natlang_mappings(os.path.join(data_dir, "turk-questions-dev-mappings.tsv"))
+        return self._create_examples(self._read_jsonl(os.path.join(data_dir, "dev.jsonl")),
+            self._read_jsonl(os.path.join(data_dir, "meta-dev.jsonl")),
             natlang_mappings)
 
     def get_labels(self):
@@ -287,9 +283,7 @@ class RRProcessor(DataProcessor):
             sentence_scramble = record["meta"]["sentenceScramble"]
             for (j, question) in enumerate(record["questions"]):
                 # Uncomment to train/evaluate at a certain depth
-                #if question["meta"]["QDep"] != 4:
-                #    continue
-                #if not record["id"].startswith("AttPosElectricityRB4"):
+                #if question["meta"]["QDep"] != 5:
                 #    continue
                 id = question["id"]
                 label = question["label"]
@@ -302,7 +296,8 @@ class RRProcessor(DataProcessor):
                 nfact = meta_record["NFact"]
                 nrule = meta_record["NRule"]
                 if "NatLang" not in id:
-                    continue
+                    # Uncomment this to test only on ParaRules subset
+                    #continue
                     node_label, edge_label = self._get_node_edge_label_no_natlang(proofs, sentence_scramble, nfact, nrule)
                     sent_offset = [k for k in range(len(node_label)-1)]
                 else:
@@ -316,6 +311,7 @@ class RRProcessor(DataProcessor):
                     cumulative = 0
                     for k in range(len(sid_sents_map)):
                         sents = sid_sents_map["sent" + str(k+1)]
+                        print(sents)
                         sent_offset.append(cumulative + len(sent_tokenize(sents))-1)
                         cumulative += len(sent_tokenize(sents))
 
@@ -479,6 +475,7 @@ def convert_examples_to_features_RR(examples,
             logger.info("Writing example %d of %d" % (ex_index, len(examples)))
 
         sentences = sent_tokenize(example.context)
+
         context_tokens = []
         proof_offset = []
         sent_offset = example.sent_offset
@@ -494,7 +491,6 @@ def convert_examples_to_features_RR(examples,
             context_tokens.extend(sentence_tokens)
             proof_offset.append(len(context_tokens))
             curr_offset = offset+1
-            #proof_offset.append(len(sentence_tokens)) # Uncomment this for the efficient model
 
         if is_error:
             print(example.context)
@@ -578,9 +574,6 @@ def convert_examples_to_features_RR(examples,
                        edge_label=edge_label,
                        label_id=label_id))
 
-        #if ex_index > 1000:
-        #    break
-
     print(error_tokenization)
     return features
 
@@ -631,81 +624,6 @@ def compute_metrics(task_name, preds, labels):
         return {"acc": simple_accuracy(preds, labels)}
     else:
         raise KeyError(task_name)
-
-def compute_graph_metrics(task_name, node_preds, out_node_label_ids, edge_preds, out_edge_label_ids):
-    assert len(node_preds) == len(out_node_label_ids)
-    assert len(edge_preds) == len(out_edge_label_ids)
-    assert len(node_preds) == len(edge_preds)
-    correct_node, correct_edge, correct_graph = 0, 0, 0
-    for i in range(len(out_node_label_ids)):
-        for j in range(len(out_node_label_ids[i])):
-            if out_node_label_ids[i][j] == -100: # Ignore index, so copy it
-                node_preds[i][j] = -100
-                continue
-
-        for j in range(len(out_edge_label_ids[i])):
-            if out_edge_label_ids[i][j] == -100:
-                edge_preds[i][j] = -100
-
-        # If they match exactly, then it's fully correct
-        if np.array_equal(out_node_label_ids[i], node_preds[i]):
-            correct_node += 1
-
-        if np.array_equal(out_edge_label_ids[i], edge_preds[i]):
-            correct_edge += 1
-
-        if np.array_equal(out_node_label_ids[i], node_preds[i]) and np.array_equal(out_edge_label_ids[i], edge_preds[i]):
-            correct_graph += 1
-
-    return {"node_acc": correct_node/len(node_preds),
-            "edge_acc": correct_edge/len(edge_preds),
-            "graph_acc": correct_graph/len(edge_preds)}
-
-def compute_graph_metrics_node_based(task_name, node_preds, out_node_label_ids, edge_preds, out_edge_label_ids):
-    assert len(node_preds) == len(out_node_label_ids)
-    assert len(edge_preds) == len(out_edge_label_ids)
-    assert len(node_preds) == len(edge_preds)
-    correct_node, correct_edge, correct_graph = 0, 0, 0
-    for i in range(len(out_node_label_ids)):
-        node_pred_ids = []
-        count_valid_nodes = 0
-        for j in range(len(out_node_label_ids[i])):
-            if out_node_label_ids[i][j] == -100: # Ignore index, so copy it
-                node_preds[i][j] = -100
-                continue
-            else:
-                count_valid_nodes += 1
-                if node_preds[i][j] == 1:
-                    node_pred_ids.append(j)
-
-        invalid_edges_start = count_valid_nodes*count_valid_nodes
-        for j in range(len(out_edge_label_ids[i])):
-            row = int(j/count_valid_nodes)
-            col = j % count_valid_nodes
-            # Invalid cases
-            if j >= invalid_edges_start:
-                edge_preds[i][j] = -100
-            # Lower triangle
-            elif row >= col:
-                edge_preds[i][j] = -100
-            # Edges to nodes not part of node prediction, so can be ignored
-            elif row not in node_pred_ids or col not in node_pred_ids:
-                edge_preds[i][j] = out_edge_label_ids[i][j]
-
-        # If they match exactly, then it's fully correct
-        if np.array_equal(out_node_label_ids[i], node_preds[i]):
-            correct_node += 1
-
-        if np.array_equal(out_edge_label_ids[i], edge_preds[i]):
-            correct_edge += 1
-
-        if np.array_equal(out_node_label_ids[i], node_preds[i]) and np.array_equal(out_edge_label_ids[i], edge_preds[i]):
-            correct_graph += 1
-
-    return {"node_acc": correct_node/len(node_preds),
-            "edge_acc": correct_edge/len(edge_preds),
-            "graph_acc": correct_edge/len(edge_preds)}
-
 
 processors = {
     "rr": RRProcessor

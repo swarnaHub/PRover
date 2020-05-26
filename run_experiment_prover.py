@@ -280,11 +280,8 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
 
         if not eval_split == "test":
             result = compute_metrics(eval_task, preds, out_label_ids)
-            result_graph = compute_graph_metrics(eval_task, node_preds, out_node_label_ids, edge_preds, out_edge_label_ids)
             result_split = {}
             for k, v in result.items():
-                result_split[k + "_{}".format(eval_split)] = v
-            for k, v in result_graph.items():
                 result_split[k + "_{}".format(eval_split)] = v
             results.update(result_split)
 
@@ -295,7 +292,9 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
                     logger.info("  %s = %s", key, str(result_split[key]))
                     writer.write("%s = %s\n" % (key, str(result_split[key])))
 
-        # predictions
+        # The model outputs the QA accuracy, QA predictions, node predictions and the edge logit predictions
+
+        # QA Predictions
         output_pred_file = os.path.join(eval_output_dir, "predictions_{}.lst".format(eval_split))
         with open(output_pred_file, "w") as writer:
             logger.info("***** Write predictions {} on {} *****".format(prefix, eval_split))
@@ -311,78 +310,12 @@ def evaluate(args, model, tokenizer, processor, prefix="", eval_split=None):
                 node_pred = node_pred[:len(node_gold)]
                 writer.write(str(list(node_pred)) + "\n")
 
-        # prediction edges
-        output_edge_pred_file = os.path.join(eval_output_dir, "prediction_edges_{}.lst".format(eval_split))
-        with open(output_edge_pred_file, "w") as writer:
-            logger.info("***** Write predictions {} on {} *****".format(prefix, eval_split))
-            for edge_pred in edge_preds:
-                writer.write(str(list(edge_pred)) + "\n")
-
-        # prediction edges
+        # prediction edge logits
         output_edge_pred_file = os.path.join(eval_output_dir, "prediction_edge_logits_{}.lst".format(eval_split))
         with open(output_edge_pred_file, "w") as writer:
             logger.info("***** Write predictions {} on {} *****".format(prefix, eval_split))
             for edge_pred_logit in edge_pred_logits:
                 writer.write(str(list(edge_pred_logit)) + "\n")
-
-        '''
-        # prediction proofs
-        output_proof_pred_file = os.path.join(eval_output_dir, "prediction_graphs_{}.lst".format(eval_split))
-        with open(output_proof_pred_file, "w") as writer:
-            logger.info("***** Write predictions {} on {} *****".format(prefix, eval_split))
-            for (ex_index, example) in enumerate(examples):
-                writer.write(example.context + "\n")
-                writer.write(example.question + "\n")
-                gold_proof = out_node_label_ids[ex_index]
-                gold_proof = gold_proof[np.where(gold_proof != -100)[0]]
-                pred_proof = node_preds[ex_index][:len(gold_proof)]
-                writer.write("Correct" + "\n") if np.array_equal(gold_proof, pred_proof) else writer.write(
-                    "Incorrect\n")
-                writer.write(str(gold_proof) + "\n")
-                writer.write(str(pred_proof) + "\n")
-
-                facts_rules = sent_tokenize(example.context)
-                assert len(gold_proof) == len(facts_rules) + 1
-                for index in range(len(gold_proof)):
-                    if gold_proof[index] == 1:
-                        if index == len(gold_proof) - 1:
-                            writer.write("NAF")
-                        else:
-                            writer.write(facts_rules[index].strip())
-
-                writer.write("\n")
-                for index in range(len(pred_proof)):
-                    if pred_proof[index] == 1:
-                        if index == len(pred_proof) - 1:
-                            writer.write("NAF")
-                        else:
-                            writer.write(facts_rules[index].strip())
-
-                writer.write("\n")
-
-                writer.write(str(np.where(gold_proof == 1)[0]) + "\n")
-                writer.write(str(np.where(pred_proof == 1)[0]) + "\n")
-
-                gold_edge = out_edge_label_ids[ex_index][:(len(gold_proof)*len(gold_proof))]
-                pred_edge = edge_preds[ex_index][:len(gold_edge)]
-                gold_edge = gold_edge.reshape(-1, len(gold_proof))
-                pred_edge = pred_edge.reshape(-1, len(gold_proof))
-
-                gold_edge1 = np.where(gold_edge == 1)
-                gold_edge2 = (np.where(gold_edge == 2)[1], np.where(gold_edge == 2)[0])
-
-                writer.write(str(list(gold_edge1[0]) + list(gold_edge2[0])) + "\n")
-                writer.write(str(list(gold_edge1[1]) + list(gold_edge2[1])) + "\n")
-
-                pred_edge1 = np.where(pred_edge == 1)
-                pred_edge2 = (np.where(pred_edge == 2)[1], np.where(pred_edge == 2)[0])
-
-                writer.write(str(list(pred_edge1[0]) + list(pred_edge2[0])) + "\n")
-                writer.write(str(list(pred_edge1[1]) + list(pred_edge2[1])) + "\n")
-
-
-                writer.write("\n\n")
-        '''
 
     return results
 
@@ -482,7 +415,7 @@ def main():
                         help="Pretrained tokenizer name or path if not the same as model_name")
     parser.add_argument("--cache_dir", default="", type=str,
                         help="Where do you want to store the pre-trained models downloaded from s3")
-    parser.add_argument("--max_seq_length", default=512, type=int,
+    parser.add_argument("--max_seq_length", default=300, type=int,
                         help="The maximum total input sequence length after tokenization. Sequences longer "
                              "than this will be truncated, sequences shorter will be padded.")
     parser.add_argument("--max_edge_length", default=676, type=int,

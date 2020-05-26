@@ -29,7 +29,7 @@ from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
 
 from pytorch_transformers import AdamW, WarmupLinearSchedule
 
-from model import RobertaForRRWithNodeLoss, RobertaForMultipleChoice
+from model import RobertaForRRWithNodeLoss
 from utils import (compute_metrics,
                    output_modes, processors,
                    convert_examples_to_features_RR)

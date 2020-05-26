@@ -6,8 +6,6 @@ import os
 import sys
 from io import open
 
-from scipy.stats import pearsonr, spearmanr
-from sklearn.metrics import matthews_corrcoef, f1_score
 import json
 from nltk.tokenize import sent_tokenize
 import numpy as np
@@ -130,9 +128,10 @@ class RRProcessorQA(DataProcessor):
             self._read_jsonl(os.path.join(data_dir, "meta-train.jsonl")))
 
     def get_dev_examples(self, data_dir):
+        # Change these to test paths for test results
         return self._create_examples(
-            self._read_jsonl(os.path.join(data_dir, "test.jsonl")),
-            self._read_jsonl(os.path.join(data_dir, "meta-test.jsonl")))
+            self._read_jsonl(os.path.join(data_dir, "dev.jsonl")),
+            self._read_jsonl(os.path.join(data_dir, "meta-dev.jsonl")))
         '''
         return self._create_examples_leave_one_out(
             self._read_jsonl(os.path.join(data_dir, "leave-one-out.jsonl"))
@@ -183,9 +182,10 @@ class RRProcessor(DataProcessor):
             self._read_jsonl(os.path.join(data_dir, "meta-train.jsonl")))
 
     def get_dev_examples(self, data_dir):
+        # Change these to test paths for test results
         return self._create_examples(
-            self._read_jsonl(os.path.join(data_dir, "test.jsonl")),
-            self._read_jsonl(os.path.join(data_dir, "meta-test.jsonl")))
+            self._read_jsonl(os.path.join(data_dir, "dev.jsonl")),
+            self._read_jsonl(os.path.join(data_dir, "meta-dev.jsonl")))
 
     def get_test_examples(self, data_dir):
         return self._create_examples(
@@ -195,6 +195,7 @@ class RRProcessor(DataProcessor):
     def get_labels(self):
         return [True, False]
 
+    # Unconstrained training, use this for ablation
     def _get_node_edge_label_unconstrained(self, proofs, sentence_scramble, nfact, nrule):
         proof = proofs.split("OR")[0]
         #print(proof)
@@ -249,7 +250,7 @@ class RRProcessor(DataProcessor):
         else:
             nodes, edges = get_proof_graph(proof)
         # print(nodes)
-        #print(edges)
+        # print(edges)
 
         component_index_map = {}
         for (i, index) in enumerate(sentence_scramble):
@@ -312,8 +313,9 @@ class RRProcessor(DataProcessor):
             sentence_scramble = record["meta"]["sentenceScramble"]
             for (j, question) in enumerate(record["questions"]):
                 # Uncomment to train/evaluate at a certain depth
-                #if question["meta"]["QDep"] != 4:
+                #if question["meta"]["QDep"] != 5:
                 #    continue
+                # Uncomment to test at a specific subset of Birds-Electricity dataset
                 #if not record["id"].startswith("AttPosElectricityRB4"):
                 #    continue
                 id = question["id"]
@@ -589,7 +591,6 @@ def convert_examples_to_features_RR(examples,
             sentence_tokens = tokenizer.tokenize(sentence)
             context_tokens.extend(sentence_tokens)
             proof_offset.append(len(context_tokens))
-            #proof_offset.append(len(sentence_tokens)) # Uncomment this for the efficient model
         max_size = max(max_size, len(context_tokens))
 
         question_tokens = tokenizer.tokenize(example.question)
@@ -718,36 +719,6 @@ def compute_metrics(task_name, preds, labels):
         return {"acc": simple_accuracy(preds, labels)}
     else:
         raise KeyError(task_name)
-
-
-def compute_graph_metrics(task_name, node_preds, out_node_label_ids, edge_preds, out_edge_label_ids):
-    assert len(node_preds) == len(out_node_label_ids)
-    assert len(edge_preds) == len(out_edge_label_ids)
-    assert len(node_preds) == len(edge_preds)
-    correct_node, correct_edge, correct_graph = 0, 0, 0
-    for i in range(len(out_node_label_ids)):
-        for j in range(len(out_node_label_ids[i])):
-            if out_node_label_ids[i][j] == -100: # Ignore index, so copy it
-                node_preds[i][j] = -100
-                continue
-
-        for j in range(len(out_edge_label_ids[i])):
-            if out_edge_label_ids[i][j] == -100:
-                edge_preds[i][j] = -100
-
-        # If they match exactly, then it's fully correct
-        if np.array_equal(out_node_label_ids[i], node_preds[i]):
-            correct_node += 1
-
-        if np.array_equal(out_edge_label_ids[i], edge_preds[i]):
-            correct_edge += 1
-
-        if np.array_equal(out_node_label_ids[i], node_preds[i]) and np.array_equal(out_edge_label_ids[i], edge_preds[i]):
-            correct_graph += 1
-
-    return {"node_acc": correct_node/len(node_preds),
-            "edge_acc": correct_edge/len(edge_preds),
-            "graph_acc": correct_graph/len(edge_preds)}
 
 processors = {
     "rr": RRProcessor,

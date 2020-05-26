@@ -40,8 +40,8 @@ def get_node_edge_indices(proofs, sentence_scramble, nfact, nrule):
     return all_node_indices, all_edge_indices
 
 def get_gold_proof_nodes_edges(data_dir):
-    test_file = os.path.join(data_dir, "test.jsonl")
-    meta_test_file = os.path.join(data_dir, "meta-test.jsonl")
+    test_file = os.path.join(data_dir, "dev.jsonl")
+    meta_test_file = os.path.join(data_dir, "meta-dev.jsonl")
 
     f1 = open(test_file, "r", encoding="utf-8-sig")
     f2 = open(meta_test_file, "r", encoding="utf-8-sig")
@@ -62,7 +62,7 @@ def get_gold_proof_nodes_edges(data_dir):
             nfact = meta_record["NFact"]
             nrule = meta_record["NRule"]
             label = question["label"]
-            #if question["meta"]["QDep"] != 4:
+            #if question["meta"]["QDep"] != 5:
             #    continue
             all_node_indices, all_edge_indices = get_node_edge_indices(proofs, sentence_scramble, nfact, nrule)
             gold_proofs.append((all_node_indices, all_edge_indices))

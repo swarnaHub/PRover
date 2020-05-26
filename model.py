@@ -137,7 +137,6 @@ class RobertaForRRWithEdgeLoss(BertPreTrainedModel):
             prev_index = 1
             sample_node_embedding = None
             count = 0
-            # TODO: Make it efficient
             for offset in proof_offset[batch_index]:
                 if offset == 0:
                     break

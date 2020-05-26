@@ -64,8 +64,8 @@ def get_node_edge_indices(proofs, natlang_mapping):
 def get_gold_proof_nodes_edges(data_dir, natlang_metadata):
     natlang_mappings = get_natlang_mappings(natlang_metadata)
 
-    test_file = os.path.join(data_dir, "test.jsonl")
-    meta_test_file = os.path.join(data_dir, "meta-test.jsonl")
+    test_file = os.path.join(data_dir, "dev.jsonl")
+    meta_test_file = os.path.join(data_dir, "meta-dev.jsonl")
 
     f1 = open(test_file, "r", encoding="utf-8-sig")
     f2 = open(meta_test_file, "r", encoding="utf-8-sig")
@@ -85,9 +85,13 @@ def get_gold_proof_nodes_edges(data_dir, natlang_metadata):
         if filter_context(context):
             continue
         for (j, question) in enumerate(record["questions"]):
-            #if question["meta"]["QDep"] != 3:
+            # Uncomment to test at certain depth
+            #if question["meta"]["QDep"] != 5:
             #    continue
             id = question["id"]
+            # Testing only for NatLang samples
+            if "NatLang" not in id:
+                continue
             meta_data = meta_record["questions"]["Q" + str(j + 1)]
 
             proofs = meta_data["proofs"]
@@ -227,19 +231,3 @@ if __name__ == '__main__':
     print("Edge accuracy = " + str(correct_edges / len(all_gold_proofs)))
     print("Proof accuracy = " + str(correct_proofs / len(all_gold_proofs)))
     print("Full accuracy = " + str(correct_samples / len(all_gold_proofs)))
-    print("QA accuracy among correct proofs = " + str(correct_samples / correct_proofs))
-
-    macro_precision_nodes /= len(all_gold_proofs)
-    macro_recall_nodes /= len(all_gold_proofs)
-    f1_nodes = 2 * macro_precision_nodes * macro_recall_nodes / (macro_precision_nodes + macro_recall_nodes)
-    print("Macro precision nodes = " + str(macro_precision_nodes))
-    print("Macro recall nodes = " + str(macro_recall_nodes))
-    print("F1 nodes = " + str(f1_nodes))
-
-    macro_precision_edges /= len(all_gold_proofs)
-    macro_recall_edges /= len(all_gold_proofs)
-    f1_edges = 2*macro_precision_edges*macro_recall_edges/(macro_precision_edges+macro_recall_edges)
-    print("Macro precision edges = " + str(macro_precision_edges))
-    print("Macro recall edges = " + str(macro_recall_edges))
-    print("F1 edges = " + str(f1_edges))
-

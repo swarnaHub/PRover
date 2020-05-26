@@ -37,7 +37,7 @@ def get_node_edge_indices(proofs, sentence_scramble, nfact, nrule):
         all_node_indices.append(node_indices)
         all_edge_indices.append(edge_indices)
 
-    return all_node_indices, all_edge_indices
+    return all_node_indices, all_edge_indices, nfact+nrule
 
 def get_gold_proof_nodes_edges(data_dir):
     test_file = os.path.join(data_dir, "test.jsonl")
@@ -47,6 +47,7 @@ def get_gold_proof_nodes_edges(data_dir):
     f2 = open(meta_test_file, "r", encoding="utf-8-sig")
 
     gold_proofs = []
+    sent_counts = []
     for record, meta_record in zip(f1, f2):
         record = json.loads(record)
         meta_record = json.loads(meta_record)
@@ -60,13 +61,14 @@ def get_gold_proof_nodes_edges(data_dir):
             proofs = meta_data["proofs"]
             nfact = meta_record["NFact"]
             nrule = meta_record["NRule"]
-            #if question["meta"]["QDep"] != 5:
-            #    continue
+            if question["meta"]["QDep"] != 5:
+                continue
             #print(question['label'])
-            all_node_indices, all_edge_indices = get_node_edge_indices(proofs, sentence_scramble, nfact, nrule)
+            all_node_indices, all_edge_indices, sent_count = get_node_edge_indices(proofs, sentence_scramble, nfact, nrule)
             gold_proofs.append((all_node_indices, all_edge_indices))
+            sent_counts.append(sent_count)
 
-    return gold_proofs
+    return gold_proofs, sent_counts
 
 def is_connected(edges):
     if len(edges) == 0:
@@ -94,11 +96,43 @@ def is_direction_wrong(gold_edge, pred_edge):
 
     return True
 
+def is_pred_subset(gold_edge, pred_edge):
+    if set(pred_edge) < set(gold_edge):
+        return True
+    else:
+        return False
+
+def is_pred_superset(gold_edge, pred_edge):
+    if set(gold_edge) < set(pred_edge):
+        return True
+    else:
+        return False
+
+def is_NAF_missing(gold_node, pred_node, sent_count):
+    if sent_count not in pred_node and sent_count in gold_node:
+        return True
+    else:
+        return False
+
 if __name__ == '__main__':
-    all_gold_proofs = get_gold_proof_nodes_edges("../data/depth-5")
+    node_pred_file = open("../output/best_model/prediction_nodes_dev.lst", "r", encoding="utf-8-sig")
+    node_preds = node_pred_file.read().splitlines()
+
+    all_pred_nodes = []
+    for line in node_preds:
+        line = line[1:-1].split(", ")
+        line = [int(pred) for pred in line]
+        pred_node = []
+        for id in range(len(line)):
+            if line[id] == 1:
+                pred_node.append(id)
+        all_pred_nodes.append(pred_node)
+
+
+    all_gold_proofs, sent_counts = get_gold_proof_nodes_edges("../data/depth-5")
 
     all_pred_edges = []
-    with open("../output/edge_assignment_identifiers_overall_no_connec.lst", "r", encoding="utf-8-sig") as f:
+    with open("../output/edge_assignment_identifiers_d5.lst", "r", encoding="utf-8-sig") as f:
         lines = f.read().splitlines()
         for line in lines:
             if line == "[]":
@@ -115,9 +149,53 @@ if __name__ == '__main__':
 
     print("Num samples = " + str(len(all_gold_proofs)))
 
+    NAF_missing = 0
+    node_subset = 0
+    node_superset = 0
+    incorrect_count = 0
+    for (i, gold_proofs) in enumerate(all_gold_proofs):
+        gold_nodes = gold_proofs[0]
+        is_correct = False
+        best_pred_node = all_pred_nodes[i]
+        best_gold_node = gold_nodes[0]
+        best_common_node = -1
+        for (j, gold_node) in enumerate(gold_nodes):
+            pred_node = all_pred_nodes[i]
+
+            if set(pred_node) == set(gold_node):
+                is_correct = True
+                break
+
+            common_node = len(set(pred_node) & set(gold_node))
+            if common_node > best_common_node:
+                best_common_node = common_node
+                best_gold_node = gold_node
+                best_pred_node = pred_node
+
+        if not is_correct:
+            incorrect_count += 1
+            if is_NAF_missing(best_gold_node, best_pred_node, sent_counts[i]):
+                NAF_missing += 1
+
+            if set(best_pred_node) < set(best_gold_node):
+                print(best_gold_node)
+                print(best_pred_node)
+                node_subset += 1
+
+            if set(best_pred_node) > set(best_gold_node):
+                node_superset += 1
+
+    print("Incorrect count = " + str(incorrect_count))
+    print("NAF missing = " + str(NAF_missing/incorrect_count))
+    print("Node subset = " + str(node_subset/incorrect_count))
+    print("Node superset = " + str(node_superset/incorrect_count))
+
     count_disconnected = 0
     direction_wrong = 0
+    pred_subset = 0
+    pred_superset = 0
     missing_edges = {}
+    incorrect_count = 0
     for (i, gold_proofs) in enumerate(all_gold_proofs):
         gold_edges = gold_proofs[1]
         is_correct = False
@@ -138,6 +216,7 @@ if __name__ == '__main__':
                 best_pred_edge = pred_edge
 
         if not is_correct:
+            incorrect_count += 1
             if not is_connected(best_pred_edge):
                 print(i)
                 print(best_pred_edge)
@@ -145,13 +224,33 @@ if __name__ == '__main__':
                 count_disconnected += 1
 
             if is_direction_wrong(best_gold_edge, best_pred_edge):
-                #print(best_gold_edge)
-                #print(best_pred_edge)
-                #print("\n")
+                '''
+                print(best_gold_edge)
+                print(best_pred_edge)
+                print("\n")
+                '''
                 direction_wrong += 1
+
+            if is_pred_subset(best_gold_edge, best_pred_edge):
+                '''
+                print(best_gold_edge)
+                print(best_pred_edge)
+                print("\n")
+                '''
+                pred_subset += 1
+
+            if is_pred_superset(best_gold_edge, best_pred_edge):
+                '''
+                print(best_gold_edge)
+                print(best_pred_edge)
+                print("\n")
+                '''
+                pred_superset += 1
 
 
 
     print("Disconnected proofs = " + str(count_disconnected))
     print("Wrong direction proofs = " + str(direction_wrong))
+    print("Subset percentage = " + str(pred_subset/incorrect_count))
+    print("Superset percentage = " + str(pred_superset/incorrect_count))
 
