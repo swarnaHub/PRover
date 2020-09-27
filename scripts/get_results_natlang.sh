@@ -1,0 +1,1 @@
+python ./evaluation/eval_natlang.py --data_dir ./data/depth-3ext-NatLang/ --qa_pred_file ./output/natlang/predictions_dev.lst --node_pred_file ./output/natlang/prediction_nodes_dev.lst --edge_pred_file ./output/natlang/edge_preds_natlang.lst --natlang_metadata ./data/depth-3ext-NatLang/turk-questions-dev-mappings.tsv

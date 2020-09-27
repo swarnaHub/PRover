@@ -1,0 +1,1 @@
+python ./evaluation/eval_proof.py --data_dir ./data/depth-5 --qa_pred_file ./output/d5/predictions_dev.lst --node_pred_file ./output/d5/prediction_nodes_dev.lst --edge_pred_file ./output/d5/edge_preds_d5.lst

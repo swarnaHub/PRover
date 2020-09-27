@@ -1,0 +1,9 @@
+numpy==1.18.1
+ptvsd==4.3.2
+nltk==3.4.5
+torch==1.4.0
+PuLP==2.0
+tqdm==4.42.1
+pytorch_transformers==1.1.0
+scipy==1.4.1
+tensorboardX==2.1

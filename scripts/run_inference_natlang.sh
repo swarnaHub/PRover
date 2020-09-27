@@ -1,0 +1,1 @@
+python ./ilp_infer/inference_natlang.py --data_dir ./data/depth-3ext-NatLang/ --node_preds ./output/natlang/prediction_nodes_dev.lst --edge_logits ./output/natlang/prediction_edge_logits_dev.lst --natlang_metadata ./data/depth-3ext-NatLang/turk-questions-dev-mappings.tsv --edge_preds ./output/natlang/edge_preds_natlang.lst
