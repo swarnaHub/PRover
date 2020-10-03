@@ -120,55 +120,33 @@ if __name__ == '__main__':
     correct_edges = 0
     correct_proofs = 0
     correct_samples = 0
+    
     for (i, gold_proofs) in enumerate(all_gold_proofs):
         is_correct_qa = False
         if str(all_gold_labels[i]) == all_pred_labels[i]:
             is_correct_qa = True
             correct_qa += 1
+
         gold_nodes = gold_proofs[0]
         gold_edges = gold_proofs[1]
         pred_node = all_pred_nodes[i]
+        pred_edge = all_pred_edges[i]
 
-        best_common_node = 0
-        best_pred_node = 0
-        best_gold_node = 0
         for (j, gold_node) in enumerate(gold_nodes):
             if set(gold_node) == set(pred_node):
                 correct_nodes += 1
                 break
-            common_node = len(list(set(gold_node) & set(pred_node)))
-            if common_node > best_common_node:
-                best_common_node = common_node
-                best_pred_node = len(pred_node)
-                best_gold_node = len(gold_node)
 
-        best_common_edge = 0
-        best_pred_edge = 0
-        best_gold_edge = 0
         for (j, gold_edge) in enumerate(gold_edges):
-            pred_edge = all_pred_edges[i]
-
             if set(pred_edge) == set(gold_edge):
                 correct_edges += 1
                 break
 
-            common_edge = len(set(pred_edge) & set(gold_edge))
-            if common_edge > best_common_edge:
-                best_common_edge = common_edge
-                best_pred_edge = len(pred_edge)
-                best_gold_edge = len(gold_edge)
-
         is_correct_proof = False
         for (j, (gold_node, gold_edge)) in enumerate(zip(gold_nodes, gold_edges)):
-            if set(gold_node) == set(pred_node):
-                pred_edge = all_pred_edges[i]
-
-                if set(pred_edge) == set(gold_edge):
-                    correct_proofs += 1
-                    is_correct_proof = True
-                    break
-
-            if is_correct_proof:
+            if set(gold_node) == set(pred_node) and set(pred_edge) == set(gold_edge):
+                correct_proofs += 1
+                is_correct_proof = True
                 break
 
         if is_correct_proof and is_correct_qa:
