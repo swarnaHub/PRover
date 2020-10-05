@@ -24,7 +24,7 @@ PRover can be trained by running the following script:
 bash scripts/train_prover.sh
 ```
 This will train PRover on the ```depth-5``` dataset. Should you wish to train on any of depth-0, depth-1, etc, change the ```data_dir``` path in the script accordingly.  
-The trained model will be saved inside ```output``` folder.
+The trained model folder will be saved inside ```output``` folder.
 
 ## Testing PRover
 
@@ -40,7 +40,7 @@ Once the node predictions and the edge logits are saved, you can run ILP inferen
 ```
 bash scripts/run_inference.sh
 ```
-This will save the edge predictions at ```output/edge_preds_d5.lst```.
+This will save the edge predictions inside the model folder.
 
 ## Evaluation
 
@@ -50,7 +50,7 @@ bash scripts/get_results.sh
 ```
 
 ## Zero-shot Evaluation on Birds-Electricity
-Run the above testing, inference and evaluation scripts to test the depth-5 trained PRover model on the Birds-Electricity dataset by only changing the ```data-dir``` path to ```data/birds-electricity``` in all the scripts.
+Run the above testing, inference and evaluation scripts to test the depth-5 trained PRover model on the Birds-Electricity dataset by appropriately changing the ```data-dir``` path to ```data/birds-electricity``` in all the scripts and lines 187 and 188 in ```utils.py``` with ```test.jsonl``` and ```meta-test.jsonl```.
 
 
 ## Training PRover on ParaRules dataset
