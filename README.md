@@ -1,7 +1,7 @@
 # PRover
 PyTorch code for our EMNLP 2020 paper:
 
-[PRover: Proof Generation for Interpretable Reasoning over Rules]()
+[PRover: Proof Generation for Interpretable Reasoning over Rules](https://arxiv.org/abs/2010.02830)
 
 [Swarnadeep Saha](https://swarnahub.github.io/), [Sayan Ghosh](https://sgdgp.github.io/), [Shashank Srivastava](https://www.ssriva.com/), and [Mohit Bansal](https://www.cs.unc.edu/~mbansal/)
 
