@@ -69,6 +69,9 @@ Ablation models from the paper can be run by uncommenting parts of the code (lik
 ## Trained Models
 We also release our trained models on depth-5 dataset and ParaRules dataset [here](https://drive.google.com/file/d/1bvIZMqN2bxw2t1hXbW0WgZkrNWNKkzdC/view?usp=sharing). These contain the respective QA, node and edge predictions and you can reproduce the results from the paper by running the evaluation script.
 
+## Visualizing Proofs
+The script to visualize PRover's proof graphs as pdfs is ```evaluation/print_graphs.py```. It takes the usual arguments (data directory, node and prediction files) along with a path to the directoty to save the graphs.
+
 ### Citation
 ```
 @inproceedings{saha2020prover,
