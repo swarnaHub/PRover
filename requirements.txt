@@ -7,3 +7,4 @@ tqdm==4.42.1
 pytorch_transformers==1.1.0
 scipy==1.4.1
 tensorboardX==2.1
+graphviz==0.14.1
