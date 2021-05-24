@@ -75,7 +75,7 @@ The script to visualize PRover's proof graphs as pdfs is ```evaluation/print_gra
 ### Citation
 ```
 @inproceedings{saha2020prover,
-  title={PRover: Proof Generation for Interpretable Reasoning over Rules},
+  title={{PR}over: Proof Generation for Interpretable Reasoning over Rules},
   author={Saha, Swarnadeep and Ghosh, Sayan and Srivastava, Shashank and Bansal, Mohit},
   booktitle={EMNLP},
   year={2020}
