@@ -5,6 +5,6 @@ torch==1.4.0
 PuLP==2.0
 tqdm==4.42.1
 pytorch_transformers==1.1.0
-scipy==1.4.1
+scipy==1.10.0
 tensorboardX==2.1
 graphviz==0.14.1
